@@ -62,9 +62,6 @@ export const getStudentSubmissions = async (req: Request, res: Response) => {
     const studentSubmissions = await db.query.projects.findMany({
       where: eq(projects.studentId, studentId),
     });
-    // const studentSubmissions = await db.query.projects.findMany({
-    //   where: sql`${projects.studentId} = ${studentId}`,
-    // });
     res.status(200).json(studentSubmissions);
   } catch (error) {
     res
