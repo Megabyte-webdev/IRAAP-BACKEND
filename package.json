@@ -13,7 +13,7 @@
     "db:studio": "drizzle-kit studio"
   },
   "keywords": [],
-  "author": "",
+  "author": "Afolabi Mubarak",
   "license": "ISC",
   "description": "",
   "dependencies": {
@@ -41,5 +41,12 @@
     "ts-node-dev": "^2.0.0",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3"
+  },
+  "pnpm": {
+    "overrides": {
+      "drizzle-orm": "0.45.1",
+      "@types/pg": "8.18.0",
+      "pg": "8.20.0"
+    }
   }
 }
