@@ -29,6 +29,11 @@
     "pg": "^8.20.0",
     "zod": "^4.3.6"
   },
+  "pnpm": {
+    "overrides": {
+      "drizzle-orm": "0.45.1"
+    }
+  },
   "devDependencies": {
     "@types/bcrypt": "^6.0.0",
     "@types/express": "^5.0.6",
