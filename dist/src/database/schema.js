@@ -14,6 +14,7 @@ export const projects = pgTable("projects", {
     title: text("title").notNull(),
     abstract: text("abstract").notNull(),
     fileUrl: text("file_url").notNull(), // URL to PDF [cite: 20]
+    publicId: text("public_id").notNull(), // Cloudinary public_id for deletion
     studentId: integer("student_id").references(() => users.id),
     supervisorId: integer("supervisor_id").references(() => users.id),
     status: statusEnum("status").default("PENDING").notNull(),

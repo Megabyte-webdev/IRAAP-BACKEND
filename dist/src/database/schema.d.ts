@@ -185,6 +185,23 @@ export declare const projects: import("drizzle-orm/pg-core").PgTableWithColumns<
             identity: undefined;
             generated: undefined;
         }, {}, {}>;
+        publicId: import("drizzle-orm/pg-core").PgColumn<{
+            name: "public_id";
+            tableName: "projects";
+            dataType: "string";
+            columnType: "PgText";
+            data: string;
+            driverParam: string;
+            notNull: true;
+            hasDefault: false;
+            isPrimaryKey: false;
+            isAutoincrement: false;
+            hasRuntimeDefault: false;
+            enumValues: [string, ...string[]];
+            baseColumn: never;
+            identity: undefined;
+            generated: undefined;
+        }, {}, {}>;
         studentId: import("drizzle-orm/pg-core").PgColumn<{
             name: "student_id";
             tableName: "projects";
