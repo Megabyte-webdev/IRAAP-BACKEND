@@ -2,7 +2,7 @@ import type { Request, Response } from "express";
 import { db } from "../config/db.js";
 import { projects } from "../database/schema.js";
 import { uploadToCloudinary } from "../utils/fileUpload.js";
-import { and, eq } from "drizzle-orm/sql/expressions/conditions";
+import { and, eq } from "drizzle-orm";
 
 export const submitProject = async (req: Request, res: Response) => {
   const { title, abstract, submissionYear, supervisorId } = req.body;
