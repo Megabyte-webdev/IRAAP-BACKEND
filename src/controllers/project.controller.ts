@@ -2,6 +2,7 @@ import type { Request, Response } from "express";
 import { db } from "../config/db.js";
 import { projects } from "../database/schema.js";
 import { uploadToCloudinary } from "../utils/fileUpload.js";
+import { and, eq } from "drizzle-orm/sql/expressions/conditions";
 
 export const submitProject = async (req: Request, res: Response) => {
   const { title, abstract, submissionYear, supervisorId } = req.body;
@@ -36,17 +37,18 @@ export const submitProject = async (req: Request, res: Response) => {
 };
 
 export const getPendingProjects = async (req: Request, res: Response) => {
-  const supervisorId = (req as any).user.id;
+  const supervisorId = Number((req as any).user.id);
 
   try {
-    const pendingProjects = await db.query.projects.findMany({
-      where: (projects, { eq, and }) =>
+    const pendingProjects = await db
+      .select()
+      .from(projects)
+      .where(
         and(
           eq(projects.supervisorId, supervisorId),
           eq(projects.status, "PENDING"),
         ),
-    });
-
+      );
     res.status(200).json(pendingProjects);
   } catch (error) {
     res.status(500).json({ message: "Error fetching pending projects", error });
