@@ -3,6 +3,11 @@
   "version": "1.0.0",
   "main": "index.js",
   "type": "module",
+  "pnpm": {
+    "overrides": {
+      "drizzle-orm": "0.45.1"
+    }
+  },
   "scripts": {
     "build": "npx tsc",
     "start": "npx tsc && node ./dist/server.js",
