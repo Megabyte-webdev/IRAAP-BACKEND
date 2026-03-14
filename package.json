@@ -4,7 +4,7 @@
   "main": "index.js",
   "type": "module",
   "scripts": {
-    "build": "tsc --build && tsc --noEmit",
+    "build": "npx tsc",
     "start": "npx tsc && node ./dist/server.js",
     "dev": "nodemon",
     "db:generate": "drizzle-kit generate",

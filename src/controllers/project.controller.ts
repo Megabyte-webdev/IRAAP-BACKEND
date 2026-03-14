@@ -2,7 +2,7 @@ import type { Request, Response } from "express";
 import { db } from "../config/db.js";
 import { projects } from "../database/schema.js";
 import { uploadToCloudinary } from "../utils/fileUpload.js";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 
 export const submitProject = async (req: Request, res: Response) => {
   const { title, abstract, submissionYear, supervisorId } = req.body;
@@ -59,10 +59,12 @@ export const getStudentSubmissions = async (req: Request, res: Response) => {
   const studentId = Number((req as any).user.id);
 
   try {
+    // const studentSubmissions = await db.query.projects.findMany({
+    //   where: (projects, { eq }) => eq(projects.studentId, studentId),
+    // });
     const studentSubmissions = await db.query.projects.findMany({
-      where: (projects, { eq }) => eq(projects.studentId, studentId),
+      where: sql`${projects.studentId} = ${studentId}`,
     });
-
     res.status(200).json(studentSubmissions);
   } catch (error) {
     res
