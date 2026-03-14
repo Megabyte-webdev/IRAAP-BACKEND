@@ -3,7 +3,6 @@ import dotenv from "dotenv";
 import projectRoutes from "./src/routes/project.routes.js";
 import authRoutes from "./src/routes/auth.routes.js";
 import cors from "cors";
-
 dotenv.config();
 
 const app = express();
