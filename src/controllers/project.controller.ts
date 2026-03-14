@@ -56,7 +56,7 @@ export const getPendingProjects = async (req: Request, res: Response) => {
 };
 
 export const getStudentSubmissions = async (req: Request, res: Response) => {
-  const studentId = (req as any).user.id;
+  const studentId = Number((req as any).user.id);
 
   try {
     const studentSubmissions = await db.query.projects.findMany({
