@@ -13,7 +13,7 @@ app.use(express.urlencoded({ extended: true }));
 
 app.use(
   cors({
-    origin: "http://localhost:3000", // Your Next.js URL
+    origin: ["http://localhost:3000", "https://iraap-app.vercel.app"], // Your Next.js URL
     credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE", "PATCH"],
     allowedHeaders: ["Content-Type", "Authorization"],
