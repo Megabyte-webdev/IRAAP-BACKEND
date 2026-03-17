@@ -8,6 +8,7 @@ import jwt from "jsonwebtoken";
 export const login = async (req: Request, res: Response) => {
   const { email, password } = req.body;
 
+  //add validation using zod and also add supervisor name using the supervisorId in the user table and return it in the response
   const user: any = await db.query.users.findFirst({
     where: eq(users.email, email),
   });
@@ -31,6 +32,7 @@ export const login = async (req: Request, res: Response) => {
       id: user.id,
       fullName: user.fullName,
       email: user.email,
+      supervisorId: user.supervisorId,
       role: user.role,
     },
   });
