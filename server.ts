@@ -2,6 +2,8 @@ import express from "express";
 import dotenv from "dotenv";
 import projectRoutes from "./src/routes/project.routes.js";
 import authRoutes from "./src/routes/auth.routes.js";
+import searchRoutes from "./src/routes/search.routes.js";
+import reviewRoutes from "./src/routes/review.routes.js";
 import cors from "cors";
 dotenv.config();
 
@@ -23,6 +25,8 @@ app.use(
 // Use routes
 app.use("/api/auth", authRoutes);
 app.use("/api/projects", projectRoutes);
+app.use("/api/search", searchRoutes);
+app.use("/api/reviews", reviewRoutes);
 
 app.get("/", (req, res) => {
   res.send("Institutional Research Repository Server Running");

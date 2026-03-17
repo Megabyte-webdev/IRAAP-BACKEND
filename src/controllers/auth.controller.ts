@@ -8,21 +8,21 @@ import jwt from "jsonwebtoken";
 export const login = async (req: Request, res: Response) => {
   const { email, password } = req.body;
 
-  // 1. Find user in DB
   const user: any = await db.query.users.findFirst({
     where: eq(users.email, email),
   });
 
-  // 2. Validate password
-  if (!user || !(await bcrypt.compare(password, user.password))) {
-    return res.status(401).json({ message: "Invalid email or password" });
-  }
+  if (!user) throw new Error("User not found");
 
-  // 3. Generate JWT (The "Passport")
+  const validPassword = await bcrypt.compare(password, user.password);
+  if (!validPassword) throw new Error("Invalid credentials");
+
   const token = jwt.sign(
-    { id: user.id, role: user.role }, // Payload
-    process.env.JWT_SECRET!, // Secret key
-    { expiresIn: "8h" }, // Session duration
+    { userId: user.id, role: user.role },
+    process.env.JWT_SECRET!,
+    {
+      expiresIn: "1d",
+    },
   );
 
   res.json({
