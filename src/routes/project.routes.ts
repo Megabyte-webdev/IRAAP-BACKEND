@@ -1,8 +1,10 @@
 import { Router } from "express";
 import {
   getPendingProjects,
+  getProjectDetails,
   getStudentSubmissions,
   submitProject,
+  updateProject,
 } from "../controllers/project.controller.js";
 import { authenticate, authorize } from "../middleware/auth.js";
 import { upload } from "../middleware/upload.js";
@@ -16,6 +18,14 @@ router.post(
   authorize(["STUDENT"]),
   upload.single("file"),
   submitProject,
+);
+
+router.put(
+  "/:id",
+  authenticate,
+  authorize(["STUDENT"]),
+  upload.single("file"),
+  updateProject,
 );
 //student view their submissions
 router.get(
@@ -31,5 +41,7 @@ router.get(
   authorize(["SUPERVISOR"]),
   getPendingProjects,
 );
+
+router.get("/:id", getProjectDetails);
 
 export default router;

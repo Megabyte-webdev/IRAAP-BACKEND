@@ -31,12 +31,15 @@ export const users = pgTable(
 
     role: roleEnum("role").default("STUDENT").notNull(),
 
+    supervisorId: integer("supervisor_id").references(() => users.id),
+
     createdAt: timestamp("created_at").defaultNow(),
 
     updatedAt: timestamp("updated_at").defaultNow(),
   },
   (table) => ({
     emailIndex: index("users_email_idx").on(table.email),
+    supervisorIndex: index("users_supervisor_idx").on(table.supervisorId),
   }),
 );
 

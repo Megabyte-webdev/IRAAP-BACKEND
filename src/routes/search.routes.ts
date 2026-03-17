@@ -8,6 +8,7 @@ import {
 const router: Router = Router();
 
 router.get("/projects", searchProjects);
+
 // Get all categories for dropdowns
 router.get("/categories", getCategories);
 

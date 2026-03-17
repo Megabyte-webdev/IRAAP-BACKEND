@@ -4,11 +4,15 @@ import projectRoutes from "./src/routes/project.routes.js";
 import authRoutes from "./src/routes/auth.routes.js";
 import searchRoutes from "./src/routes/search.routes.js";
 import reviewRoutes from "./src/routes/review.routes.js";
+import adminRoutes from "./src/routes/admin.routes.js";
 import cors from "cors";
+import { applyGlobalSecurity } from "./src/middleware/rateLimiter.js";
 dotenv.config();
 
 const app = express();
 const port = process.env.PORT || 3000;
+
+applyGlobalSecurity(app);
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -27,6 +31,7 @@ app.use("/api/auth", authRoutes);
 app.use("/api/projects", projectRoutes);
 app.use("/api/search", searchRoutes);
 app.use("/api/reviews", reviewRoutes);
+app.use("/api/admin", adminRoutes);
 
 app.get("/", (req, res) => {
   res.send("Institutional Research Repository Server Running");

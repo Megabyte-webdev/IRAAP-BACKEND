@@ -2,12 +2,25 @@ import type { Request, Response } from "express";
 import { db } from "../config/db.js";
 import { categories, metadata, projects, users } from "../database/schema.js";
 import { and, desc, eq, ilike, sql } from "drizzle-orm";
+import { file } from "zod";
+import { stat } from "node:fs";
 
 export const searchProjects = async (req: Request, res: Response) => {
   const { title, year, researchArea, methodology } = req.query;
   try {
     const results = await db
-      .select()
+      .select({
+        id: projects.id,
+        title: projects.title,
+        submissionYear: projects.submissionYear,
+        status: projects.status,
+        category: categories.name,
+        abstract: projects.abstract,
+        researchArea: metadata.researchArea,
+        methodology: metadata.methodology,
+        categoryId: projects.categoryId,
+        createdAt: projects.createdAt,
+      })
       .from(projects)
       .innerJoin(categories, eq(projects.categoryId, categories.id))
       .innerJoin(metadata, eq(projects.id, metadata.projectId))
