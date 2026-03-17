@@ -1,35 +1,23 @@
-import { rateLimit } from "express-rate-limit";
-import { RedisStore } from "rate-limit-redis";
-import { createClient } from "redis";
-import helmet from "helmet";
 import type { Express } from "express";
-
-// Initialize Redis Client (Use environment variables for security!)
-const redisClient = createClient({
-  url: process.env.REDIS_URL,
-});
-
-redisClient.connect().catch(console.error);
+import rateLimit from "express-rate-limit";
+import helmet from "helmet";
 
 export const applyGlobalSecurity = (app: Express) => {
-  // 1. Strict Headers
-  app.use(helmet() as any);
+  // 1. Set Security Headers (Protects against XSS, Clickjacking, etc.)
+  app.use((helmet as any)());
 
-  // 2. Persistent Rate Limiter
+  // 2. Global Rate Limiter (Protects against DOS/Brute Force)
   const globalLimiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 100, // Stricter limit for production
-    standardHeaders: true,
-    legacyHeaders: false,
-    // The "Magic" part:
-    store: new RedisStore({
-      sendCommand: (...args: string[]) => redisClient.sendCommand(args),
-    }),
+    max: 200, // 200 requests per 15 minutes per IP
     message: {
       status: 429,
       success: false,
-      message: "Security block: Extreme request volume detected.",
+      message: "Security block: Too many requests. Please try again later.",
     },
+    standardHeaders: true,
+    legacyHeaders: false,
+    // skipSuccessfulRequests: false, // Set to true if you only want to block attackers failing logins
   });
 
   app.use(globalLimiter);
