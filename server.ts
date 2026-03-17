@@ -7,6 +7,7 @@ import reviewRoutes from "./src/routes/review.routes.js";
 import adminRoutes from "./src/routes/admin.routes.js";
 import cors from "cors";
 import { applyGlobalSecurity } from "./src/middleware/rateLimiter.js";
+import { seed, seedCategories } from "./src/database/seeds.js";
 dotenv.config();
 
 const app = express();
