@@ -43,20 +43,22 @@ export const submitProject = async (req: Request, res: Response) => {
   } catch (err: any) {
     return res
       .status(400)
-      .json({ message: "Invalid input", error: err.errors });
+      .json({ message: "Invalid input", details: err.errors });
   }
 
-  // Sanitize main fields
+  // Sanitize text fields
   parsed.title = sanitizeString(parsed.title);
   parsed.abstract = sanitizeString(parsed.abstract);
   parsed.methodology = sanitizeString(parsed.methodology);
   parsed.researchArea = sanitizeString(parsed.researchArea);
 
   let uploadResult: any;
+
   try {
     uploadResult = await uploadToCloudinary(file.buffer);
 
     const newProject = await db.transaction(async (tx) => {
+      // Insert project
       const [project] = await tx
         .insert(projects)
         .values({
@@ -72,9 +74,10 @@ export const submitProject = async (req: Request, res: Response) => {
         })
         .returning();
 
+      // Insert metadata
       await tx.insert(metadata).values({
         projectId: project.id,
-        keywords: sql`${parsed.keywords}`,
+        keywords: sql`ARRAY[${parsed.keywords.map((k) => `'${sanitizeString(k)}'`).join(",")}]::text[]`,
         researchArea: parsed.researchArea,
         methodology: parsed.methodology,
       });
@@ -96,9 +99,10 @@ export const submitProject = async (req: Request, res: Response) => {
       });
     }
 
-    return res
-      .status(500)
-      .json({ message: "Submission failed", error: error.message });
+    return res.status(500).json({
+      message: "Project submission failed",
+      details: error.message,
+    });
   }
 };
 
@@ -114,15 +118,17 @@ export const updateProject = async (req: Request, res: Response) => {
   } catch (err: any) {
     return res
       .status(400)
-      .json({ message: "Invalid input", error: err.errors });
+      .json({ message: "Invalid input", details: err.errors });
   }
 
+  // Sanitize
   parsed.title = sanitizeString(parsed.title);
   parsed.abstract = sanitizeString(parsed.abstract);
   parsed.methodology = sanitizeString(parsed.methodology);
   parsed.researchArea = sanitizeString(parsed.researchArea);
 
   let uploadResult: any;
+
   try {
     if (file) uploadResult = await uploadToCloudinary(file.buffer);
 
@@ -149,7 +155,7 @@ export const updateProject = async (req: Request, res: Response) => {
       await tx
         .update(metadata)
         .set({
-          keywords: sql`${parsed.keywords}`,
+          keywords: sql`ARRAY[${parsed.keywords.map((k) => `'${sanitizeString(k)}'`).join(",")}]::text[]`,
           researchArea: parsed.researchArea,
           methodology: parsed.methodology,
         })
@@ -167,9 +173,10 @@ export const updateProject = async (req: Request, res: Response) => {
     if (uploadResult?.publicId)
       await cloudinary.uploader.destroy(uploadResult.publicId);
 
-    return res
-      .status(500)
-      .json({ message: "Project update failed", error: error.message });
+    return res.status(500).json({
+      message: "Project update failed",
+      details: error.message,
+    });
   }
 };
 
