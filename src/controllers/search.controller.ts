@@ -49,7 +49,8 @@ export const getHomepageData = async (req: Request, res: Response) => {
 
     const [researchersCount] = await db
       .select({ count: sql<number>`count(*)` })
-      .from(users);
+      .from(users)
+      .where(eq(users.role, "STUDENT"));
 
     const [supervisorsCount] = await db
       .select({ count: sql<number>`count(*)` })
@@ -58,8 +59,16 @@ export const getHomepageData = async (req: Request, res: Response) => {
 
     // Featured Projects (latest approved)
     const featuredProjects = await db
-      .select()
+      .select({
+        id: projects.id,
+        title: projects.title,
+        category: categories.name,
+        abstract: projects.abstract,
+        categoryId: projects.categoryId,
+        createdAt: projects.createdAt,
+      })
       .from(projects)
+      .leftJoin(categories, eq(projects.categoryId, categories.id))
       .limit(6)
       .orderBy(desc(projects.createdAt));
 
