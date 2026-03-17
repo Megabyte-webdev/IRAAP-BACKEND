@@ -1,5 +1,5 @@
 import { db } from "../config/db.js";
-import { users } from "./schema.js";
+import { users, categories } from "./schema.js";
 import bcrypt from "bcrypt";
 
 export async function seed() {
@@ -36,4 +36,22 @@ export async function seed() {
     console.error("Seeding failed:", error);
   }
   process.exit();
+}
+
+export async function seedCategories() {
+  console.log("Seeding categories...");
+  const newCategories = [
+    { name: "Computer Science" },
+    { name: "Information Technology" },
+    { name: "Software Engineering" },
+    { name: "Data Science" },
+    { name: "Artificial Intelligence" },
+  ];
+
+  try {
+    await db.insert(categories).values(newCategories);
+    console.log("Category seeding completed successfully.");
+  } catch (error) {
+    console.error("Category seeding failed:", error);
+  }
 }

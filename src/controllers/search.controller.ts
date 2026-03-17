@@ -1,7 +1,7 @@
 import type { Request, Response } from "express";
 import { db } from "../config/db.js";
-import { categories, metadata, projects } from "../database/schema.js";
-import { and, eq, ilike } from "drizzle-orm";
+import { categories, metadata, projects, users } from "../database/schema.js";
+import { and, desc, eq, ilike, sql } from "drizzle-orm";
 
 export const searchProjects = async (req: Request, res: Response) => {
   const { title, year, researchArea, methodology } = req.query;
@@ -32,13 +32,46 @@ export const searchProjects = async (req: Request, res: Response) => {
 export const getCategories = async (req: Request, res: Response) => {
   try {
     const categoriesList = await db.select().from(categories);
-    res
-      .status(200)
-      .json({
-        message: "Categories fetched successfully",
-        categories: categoriesList,
-      });
+    res.status(200).json({
+      message: "Categories fetched successfully",
+      categories: categoriesList,
+    });
   } catch (error) {
     res.status(500).json({ message: "Failed to fetch categories", error });
+  }
+};
+
+export const getHomepageData = async (req: Request, res: Response) => {
+  try {
+    const [projectsCount] = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(projects);
+
+    const [researchersCount] = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(users);
+
+    const [supervisorsCount] = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(users)
+      .where(eq(users.role, "SUPERVISOR"));
+
+    // Featured Projects (latest approved)
+    const featuredProjects = await db
+      .select()
+      .from(projects)
+      .limit(6)
+      .orderBy(desc(projects.createdAt));
+
+    res.status(200).json({
+      stats: {
+        projects: Number(projectsCount.count),
+        researchers: Number(researchersCount.count),
+        supervisors: Number(supervisorsCount.count),
+      },
+      featuredProjects,
+    });
+  } catch (error) {
+    res.status(500).json({ message: "Failed to fetch homepage data" });
   }
 };
