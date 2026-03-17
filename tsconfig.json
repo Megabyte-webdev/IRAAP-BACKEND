@@ -33,7 +33,6 @@
     // "noPropertyAccessFromIndexSignature": true,
     "esModuleInterop": true,
     "allowSyntheticDefaultImports": true,
-    "moduleResolution": "node",
 
     // Recommended Options
     "strict": false,

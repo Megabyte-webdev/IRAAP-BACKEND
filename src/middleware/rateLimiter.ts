@@ -13,7 +13,7 @@ redisClient.connect().catch(console.error);
 
 export const applyGlobalSecurity = (app: Express) => {
   // 1. Strict Headers
-  app.use(helmet());
+  app.use(helmet() as any);
 
   // 2. Persistent Rate Limiter
   const globalLimiter = rateLimit({
