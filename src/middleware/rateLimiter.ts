@@ -1,7 +1,7 @@
 import { rateLimit } from "express-rate-limit";
 import { RedisStore } from "rate-limit-redis";
 import { createClient } from "redis";
-import helmet from "helmet";
+import * as helmet from "helmet";
 import type { Express } from "express";
 
 // Initialize Redis Client (Use environment variables for security!)
@@ -13,7 +13,7 @@ redisClient.connect().catch(console.error);
 
 export const applyGlobalSecurity = (app: Express) => {
   // 1. Strict Headers
-  app.use(helmet());
+  app.use(helmet.default());
 
   // 2. Persistent Rate Limiter
   const globalLimiter = rateLimit({
