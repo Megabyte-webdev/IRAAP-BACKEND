@@ -1,5 +1,5 @@
 import type { Express } from "express";
-import rateLimit from "express-rate-limit";
+import { rateLimit } from "express-rate-limit";
 import helmet from "helmet";
 
 export const applyGlobalSecurity = (app: Express) => {
