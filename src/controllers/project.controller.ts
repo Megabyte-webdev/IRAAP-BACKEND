@@ -74,7 +74,7 @@ export const submitProject = async (req: Request, res: Response) => {
 
       await tx.insert(metadata).values({
         projectId: project.id,
-        keywords: sql`${parsed.keywords}::text[]`,
+        keywords: sql`${parsed.keywords}`,
         researchArea: parsed.researchArea,
         methodology: parsed.methodology,
       });
@@ -149,7 +149,7 @@ export const updateProject = async (req: Request, res: Response) => {
       await tx
         .update(metadata)
         .set({
-          keywords: sql`${parsed.keywords}::text[]`,
+          keywords: sql`${parsed.keywords}`,
           researchArea: parsed.researchArea,
           methodology: parsed.methodology,
         })
