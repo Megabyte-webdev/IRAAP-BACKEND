@@ -74,7 +74,7 @@ export const submitProject = async (req: Request, res: Response) => {
 
       await tx.insert(metadata).values({
         projectId: project.id,
-        keywords: parsed.keywords,
+        keywords: sql`${parsed.keywords}::text[]`,
         researchArea: parsed.researchArea,
         methodology: parsed.methodology,
       });
@@ -149,7 +149,7 @@ export const updateProject = async (req: Request, res: Response) => {
       await tx
         .update(metadata)
         .set({
-          keywords: parsed.keywords,
+          keywords: sql`${parsed.keywords}::text[]`,
           researchArea: parsed.researchArea,
           methodology: parsed.methodology,
         })
@@ -158,12 +158,10 @@ export const updateProject = async (req: Request, res: Response) => {
       return project;
     });
 
-    return res
-      .status(200)
-      .json({
-        message: "Project updated successfully",
-        project: updatedProject,
-      });
+    return res.status(200).json({
+      message: "Project updated successfully",
+      project: updatedProject,
+    });
   } catch (error: any) {
     console.error("Update error:", error);
     if (uploadResult?.publicId)
@@ -188,12 +186,10 @@ export const getPendingProjects = async (req: Request, res: Response) => {
           eq(projects.status, "PENDING"),
         ),
       );
-    res
-      .status(200)
-      .json({
-        message: "Pending projects fetched successfully",
-        projects: pendingProjects,
-      });
+    res.status(200).json({
+      message: "Pending projects fetched successfully",
+      projects: pendingProjects,
+    });
   } catch (error) {
     res.status(500).json({ message: "Error fetching pending projects", error });
   }
@@ -206,12 +202,10 @@ export const getStudentSubmissions = async (req: Request, res: Response) => {
     const submissions = await db.query.projects.findMany({
       where: eq(projects.studentId, studentId),
     });
-    res
-      .status(200)
-      .json({
-        message: "Student submissions fetched successfully",
-        projects: submissions,
-      });
+    res.status(200).json({
+      message: "Student submissions fetched successfully",
+      projects: submissions,
+    });
   } catch (error) {
     res
       .status(500)
