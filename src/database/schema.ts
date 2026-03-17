@@ -135,11 +135,11 @@ export const metadata = pgTable("metadata", {
     .references(() => projects.id, { onDelete: "cascade" })
     .notNull(),
 
-  keywords: text("keywords").notNull(),
+  keywords: text("keywords").array().notNull(),
 
   researchArea: varchar("research_area", { length: 255 }).notNull(),
 
-  methodology: varchar("methodology", { length: 255 }),
+  methodology: text("methodology"),
 
   createdAt: timestamp("created_at").defaultNow(),
 });

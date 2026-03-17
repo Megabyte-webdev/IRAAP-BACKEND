@@ -4,113 +4,141 @@ import { categories, metadata, projects } from "../database/schema.js";
 import { uploadToCloudinary } from "../utils/fileUpload.js";
 import { and, eq, sql } from "drizzle-orm";
 import cloudinary from "../config/cloudinary.js";
+import { z } from "zod";
 
+// Helper to sanitize text
+const sanitizeString = (input: string) =>
+  input.replace(/<[^>]*>?/gm, "").trim();
+
+// Zod schemas
+const projectSchema = z.object({
+  title: z.string().min(1, "Title is required"),
+  abstract: z.string().min(1, "Abstract is required"),
+  submissionYear: z.preprocess((val) => Number(val), z.number().int()),
+  categoryId: z.preprocess((val) => Number(val), z.number().int()),
+  methodology: z.string().min(1, "Methodology is required"),
+  researchArea: z.string().optional().default(""),
+  keywords: z
+    .union([z.string(), z.array(z.string())])
+    .transform((val) =>
+      Array.isArray(val)
+        ? val.map((k) => sanitizeString(k))
+        : val.split(",").map((k) => sanitizeString(k)),
+    ),
+});
+
+// -------------------- SUBMIT PROJECT --------------------
 export const submitProject = async (req: Request, res: Response) => {
-  const {
-    title,
-    abstract,
-    submissionYear,
-    categoryId,
-    keywords,
-    researchArea,
-    methodology,
-  } = req.body;
   const studentId = (req as any).user?.userId;
   const supervisorId = (req as any).user?.supervisorId;
   const file = req.file;
 
-  if (!file) return res.status(400).json({ message: "No file provided" });
+  if (!file) return res.status(400).json({ message: "No PDF file provided" });
+  if (file.size > 20 * 1024 * 1024)
+    return res.status(400).json({ message: "File size must be < 20MB" });
+
+  let parsed;
+  try {
+    parsed = projectSchema.parse(req.body);
+  } catch (err: any) {
+    return res
+      .status(400)
+      .json({ message: "Invalid input", error: err.errors });
+  }
+
+  // Sanitize main fields
+  parsed.title = sanitizeString(parsed.title);
+  parsed.abstract = sanitizeString(parsed.abstract);
+  parsed.methodology = sanitizeString(parsed.methodology);
+  parsed.researchArea = sanitizeString(parsed.researchArea);
 
   let uploadResult: any;
-
   try {
     uploadResult = await uploadToCloudinary(file.buffer);
 
-    const result = await db.transaction(async (tx) => {
-      // Create the project
-      const [newProject] = await tx
+    const newProject = await db.transaction(async (tx) => {
+      const [project] = await tx
         .insert(projects)
         .values({
-          title,
-          abstract,
+          title: parsed.title,
+          abstract: parsed.abstract,
           fileUrl: uploadResult.url,
           publicId: uploadResult.publicId,
-          submissionYear,
+          submissionYear: parsed.submissionYear,
           supervisorId,
           studentId,
-          categoryId,
+          categoryId: parsed.categoryId,
           status: "PENDING",
         })
         .returning();
 
-      // Create the metadata
       await tx.insert(metadata).values({
-        projectId: newProject.id,
-        keywords,
-        researchArea,
-        methodology,
+        projectId: project.id,
+        keywords: parsed.keywords,
+        researchArea: parsed.researchArea,
+        methodology: parsed.methodology,
       });
 
-      return newProject;
+      return project;
     });
 
-    res
+    return res
       .status(201)
-      .json({ message: "Project submitted successfully", project: result });
+      .json({ message: "Project submitted successfully", project: newProject });
   } catch (error: any) {
     console.error("Upload error:", error);
+    if (uploadResult?.publicId)
+      await cloudinary.uploader.destroy(uploadResult.publicId);
 
-    // delete the image we just uploaded to Cloudinary
-    if (uploadResult?.publicId) {
-      await cloudinary.uploader.destroy(uploadResult.publicId); // Implement this helper
-    }
-
-    // Handle Unique Constraint Error specifically
     if (error.code === "23505") {
       return res.status(400).json({
         message: "You have already submitted a project with this title.",
       });
     }
 
-    res
+    return res
       .status(500)
       .json({ message: "Submission failed", error: error.message });
   }
 };
 
+// -------------------- UPDATE PROJECT --------------------
 export const updateProject = async (req: Request, res: Response) => {
   const projectId = Number(req.params.id);
-  const {
-    title,
-    abstract,
-    submissionYear,
-    categoryId,
-    keywords,
-    researchArea,
-    methodology,
-  } = req.body;
   const studentId = (req as any).user?.userId;
   const file = req.file;
-  let uploadResult: any;
 
+  let parsed;
   try {
-    if (file) {
-      uploadResult = await uploadToCloudinary(file.buffer);
-    }
+    parsed = projectSchema.parse(req.body);
+  } catch (err: any) {
+    return res
+      .status(400)
+      .json({ message: "Invalid input", error: err.errors });
+  }
 
-    const result = await db.transaction(async (tx) => {
-      // Update the project
+  parsed.title = sanitizeString(parsed.title);
+  parsed.abstract = sanitizeString(parsed.abstract);
+  parsed.methodology = sanitizeString(parsed.methodology);
+  parsed.researchArea = sanitizeString(parsed.researchArea);
+
+  let uploadResult: any;
+  try {
+    if (file) uploadResult = await uploadToCloudinary(file.buffer);
+
+    const updatedProject = await db.transaction(async (tx) => {
       const updateData: any = {
-        title,
-        abstract,
-        submissionYear,
-        categoryId,
+        title: parsed.title,
+        abstract: parsed.abstract,
+        submissionYear: parsed.submissionYear,
+        categoryId: parsed.categoryId,
       };
       if (uploadResult) {
         updateData.fileUrl = uploadResult.url;
         updateData.publicId = uploadResult.publicId;
       }
-      const [updatedProject] = await tx
+
+      const [project] = await tx
         .update(projects)
         .set(updateData)
         .where(
@@ -118,36 +146,38 @@ export const updateProject = async (req: Request, res: Response) => {
         )
         .returning();
 
-      // Update the metadata
       await tx
         .update(metadata)
         .set({
-          keywords,
-          researchArea,
-          methodology,
+          keywords: parsed.keywords,
+          researchArea: parsed.researchArea,
+          methodology: parsed.methodology,
         })
         .where(eq(metadata.projectId, projectId));
-      return updatedProject;
+
+      return project;
     });
 
-    res
+    return res
       .status(200)
-      .json({ message: "Project updated successfully", project: result });
+      .json({
+        message: "Project updated successfully",
+        project: updatedProject,
+      });
   } catch (error: any) {
     console.error("Update error:", error);
-    // delete the image we just uploaded to Cloudinary if update fails
-    if (uploadResult?.publicId) {
-      await cloudinary.uploader.destroy(uploadResult.publicId); // Implement this helper
-    }
-    res
+    if (uploadResult?.publicId)
+      await cloudinary.uploader.destroy(uploadResult.publicId);
+
+    return res
       .status(500)
       .json({ message: "Project update failed", error: error.message });
   }
 };
 
+// -------------------- GET PENDING PROJECTS --------------------
 export const getPendingProjects = async (req: Request, res: Response) => {
   const supervisorId = Number((req as any).user.id);
-
   try {
     const pendingProjects = await db
       .select()
@@ -158,26 +188,30 @@ export const getPendingProjects = async (req: Request, res: Response) => {
           eq(projects.status, "PENDING"),
         ),
       );
-    res.status(200).json({
-      message: "Pending projects fetched successfully",
-      projects: pendingProjects,
-    });
+    res
+      .status(200)
+      .json({
+        message: "Pending projects fetched successfully",
+        projects: pendingProjects,
+      });
   } catch (error) {
     res.status(500).json({ message: "Error fetching pending projects", error });
   }
 };
 
+// -------------------- GET STUDENT SUBMISSIONS --------------------
 export const getStudentSubmissions = async (req: Request, res: Response) => {
   const studentId = Number((req as any)?.user?.userId);
-
   try {
-    const studentSubmissions = await db.query.projects.findMany({
+    const submissions = await db.query.projects.findMany({
       where: eq(projects.studentId, studentId),
     });
-    res.status(200).json({
-      message: "Student submissions fetched successfully",
-      projects: studentSubmissions,
-    });
+    res
+      .status(200)
+      .json({
+        message: "Student submissions fetched successfully",
+        projects: submissions,
+      });
   } catch (error) {
     res
       .status(500)
@@ -185,6 +219,7 @@ export const getStudentSubmissions = async (req: Request, res: Response) => {
   }
 };
 
+// -------------------- GET PROJECT DETAILS --------------------
 export const getProjectDetails = async (req: Request, res: Response) => {
   const projectId = Number(req.params.id);
 
@@ -202,7 +237,6 @@ export const getProjectDetails = async (req: Request, res: Response) => {
         keywords: metadata.keywords,
         researchArea: metadata.researchArea,
         methodology: metadata.methodology,
-        //set studentname as author
         author: sql<string>`(SELECT full_name FROM users WHERE id = ${projects.studentId})`,
         supervisor: sql<string>`(SELECT full_name FROM users WHERE id = ${projects.supervisorId})`,
         createdAt: projects.createdAt,
@@ -213,9 +247,7 @@ export const getProjectDetails = async (req: Request, res: Response) => {
       .where(eq(projects.id, projectId))
       .then((results) => results[0]);
 
-    if (!project) {
-      return res.status(404).json({ message: "Project not found" });
-    }
+    if (!project) return res.status(404).json({ message: "Project not found" });
 
     res
       .status(200)
