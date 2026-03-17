@@ -12,20 +12,17 @@ const sanitizeString = (input: string) =>
 
 // Zod schemas
 const projectSchema = z.object({
-  title: z.string().min(1, "Title is required"),
-  abstract: z.string().min(1, "Abstract is required"),
+  title: z.string().min(1),
+  abstract: z.string().min(1),
   submissionYear: z.preprocess((val) => Number(val), z.number().int()),
   categoryId: z.preprocess((val) => Number(val), z.number().int()),
-  methodology: z.string().min(1, "Methodology is required"),
+  methodology: z.string().min(1),
   researchArea: z.string().optional().default(""),
   keywords: z
-    .union([z.string(), z.array(z.string())])
-    .transform((val) =>
-      Array.isArray(val)
-        ? val.map((k) => sanitizeString(k))
-        : val.split(",").map((k) => sanitizeString(k)),
-    ),
+    .array(z.string())
+    .transform((arr) => arr.map((k) => sanitizeString(k))),
 });
+
 // -------------------- SUBMIT PROJECT --------------------
 export const submitProject = async (req: Request, res: Response) => {
   const studentId = (req as any).user?.userId;
