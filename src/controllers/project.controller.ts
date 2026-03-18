@@ -21,7 +21,6 @@ const projectSchema = z.object({
   keywords: z
     .array(z.string())
     .transform((arr) => arr.map((k) => sanitizeString(k))),
-  supervisorId: z.number().int(),
 });
 
 // -------------------- SUBMIT PROJECT --------------------
@@ -36,7 +35,7 @@ export const submitProject = async (req: Request, res: Response) => {
 
   let parsed;
   try {
-    parsed = projectSchema.parse({ ...req.body, supervisorId });
+    parsed = projectSchema.parse(req.body);
   } catch (err: any) {
     return res
       .status(400)
