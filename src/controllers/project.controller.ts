@@ -72,7 +72,7 @@ export const submitProject = async (req: Request, res: Response) => {
       // Save keywords as proper array
       await tx.insert(metadata).values({
         projectId: project.id,
-        keywords: parsed.keywords, // ✅ array of strings
+        keywords: parsed.keywords, // array of strings
         researchArea: parsed.researchArea,
         methodology: parsed.methodology,
       });
@@ -104,6 +104,7 @@ export const submitProject = async (req: Request, res: Response) => {
 export const updateProject = async (req: Request, res: Response) => {
   const projectId = Number(req.params.id);
   const studentId = (req as any).user?.userId;
+  const supervisorId = (req as any).user?.supervisorId;
   const file = req.file;
 
   let parsed;
@@ -130,6 +131,7 @@ export const updateProject = async (req: Request, res: Response) => {
         abstract: parsed.abstract,
         submissionYear: parsed.submissionYear,
         categoryId: parsed.categoryId,
+        supervisorId,
       };
       if (uploadResult) {
         updateData.fileUrl = uploadResult.url;
@@ -147,7 +149,7 @@ export const updateProject = async (req: Request, res: Response) => {
       await tx
         .update(metadata)
         .set({
-          keywords: parsed.keywords, // ✅ proper array
+          keywords: parsed.keywords, // proper array
           researchArea: parsed.researchArea,
           methodology: parsed.methodology,
         })
