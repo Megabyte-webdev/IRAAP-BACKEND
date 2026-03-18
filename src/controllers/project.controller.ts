@@ -36,7 +36,7 @@ export const submitProject = async (req: Request, res: Response) => {
 
   let parsed;
   try {
-    parsed = projectSchema.parse(req.body);
+    parsed = projectSchema.parse({ ...req.body, supervisorId });
   } catch (err: any) {
     return res
       .status(400)
