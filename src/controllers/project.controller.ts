@@ -21,6 +21,7 @@ const projectSchema = z.object({
   keywords: z
     .array(z.string())
     .transform((arr) => arr.map((k) => sanitizeString(k))),
+  supervisorId: z.number().int(),
 });
 
 // -------------------- SUBMIT PROJECT --------------------
