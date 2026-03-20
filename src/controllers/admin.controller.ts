@@ -1,8 +1,7 @@
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
-import { categories, projects, roleEnum, users } from "../database/schema.js";
+import { categories, projects, users } from "../database/schema.js";
 import { db } from "../config/db.js";
 import type { Request, Response } from "express";
-import { email } from "zod";
 import { withPagination } from "../utils/pagination.js";
 import { alias } from "drizzle-orm/pg-core";
 

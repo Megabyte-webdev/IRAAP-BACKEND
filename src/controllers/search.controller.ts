@@ -2,8 +2,6 @@ import type { Request, Response } from "express";
 import { db } from "../config/db.js";
 import { categories, metadata, projects, users } from "../database/schema.js";
 import { and, desc, eq, ilike, sql } from "drizzle-orm";
-import { file } from "zod";
-import { stat } from "node:fs";
 
 export const searchProjects = async (req: Request, res: Response) => {
   const { title, year, researchArea, methodology } = req.query;

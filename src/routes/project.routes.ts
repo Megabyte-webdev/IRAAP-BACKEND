@@ -34,13 +34,6 @@ router.get(
   authorize(["STUDENT"]),
   getStudentSubmissions,
 );
-// Supervisor only: View pending projects for review [cite: 21, 27]
-router.get(
-  "/pending",
-  authenticate,
-  authorize(["SUPERVISOR"]),
-  getPendingProjects,
-);
 
 router.get("/:id", getProjectDetails);
 
