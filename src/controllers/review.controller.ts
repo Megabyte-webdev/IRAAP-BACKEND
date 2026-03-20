@@ -5,29 +5,48 @@ import { db } from "../config/db.js";
 
 export const generateReview = async (req: Request, res: Response) => {
   const { supervisorId, comments, rating, projectId } = req.body;
+
   try {
-    // 1. Verify that the project exists and belongs to the supervisor
-    const project = await db.query.projects.findFirst({
-      where: and(
-        eq(projects.id, projectId),
-        eq(projects.supervisorId, supervisorId),
-      ),
+    const result = await db.transaction(async (tx) => {
+      // Verify the project exists and belongs to supervisor
+      const project = await tx.query.projects.findFirst({
+        where: and(
+          eq(projects.id, projectId),
+          eq(projects.supervisorId, supervisorId),
+        ),
+      });
+
+      if (!project) {
+        throw new Error("Project not found or access denied");
+      }
+
+      // Insert the review
+      const review = {
+        projectId: project.id,
+        reviewerId: supervisorId,
+        comments,
+        rating,
+      };
+      await tx.insert(reviews).values(review);
+
+      //  Update project status if provided
+      let updatedProject = project;
+
+      const updatedRows = await tx
+        .update(projects)
+        .set({ status: "REVISION_REQUESTED" })
+        .where(eq(projects.id, projectId))
+        .returning();
+      updatedProject = updatedRows[0];
+
+      return { review, project: updatedProject };
     });
 
-    if (!project) {
-      return res
-        .status(404)
-        .json({ message: "Project not found or access denied" });
-    }
-    const review = {
-      projectId: project.id,
-      reviewerId: supervisorId,
-      comments,
-      rating,
-    };
-    await db.insert(reviews).values(review);
-
-    res.status(201).json({ message: "Review submitted successfully" });
+    res.status(201).json({
+      message: "Review submitted successfully",
+      review: result.review,
+      project: result.project,
+    });
   } catch (error) {
     console.error("Error generating review:", error);
     res.status(500).json({ message: "Failed to submit review", error });

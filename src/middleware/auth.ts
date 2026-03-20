@@ -21,11 +21,35 @@ export const authenticate = (
 export const authorize = (roles: string[]) => {
   return (req: Request, res: Response, next: NextFunction) => {
     const user = (req as any).user;
-    if (!roles.includes(user.role)) {
-      return res
-        .status(403)
-        .json({ message: "Forbidden: Insufficient Permissions" });
+
+    // Ensure user exists
+    if (!user) {
+      return res.status(401).json({
+        message: "Unauthorized: User not authenticated",
+      });
     }
+
+    // Ensure role exists
+    if (!user.role) {
+      return res.status(400).json({
+        message: "Invalid user payload: Missing role",
+      });
+    }
+
+    // Role check
+    if (!roles.includes(user.role)) {
+      return res.status(403).json({
+        message: "Forbidden: Insufficient Permissions",
+      });
+    }
+
+    // Ensure ID exists
+    if (!user.userId) {
+      return res.status(400).json({
+        message: "Invalid user payload: Missing user ID",
+      });
+    }
+
     next();
   };
 };

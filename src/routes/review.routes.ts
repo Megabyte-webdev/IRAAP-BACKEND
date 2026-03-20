@@ -7,7 +7,7 @@ import { authenticate, authorize } from "../middleware/auth.js";
 
 const router: Router = Router();
 
-router.get("/", getReviewsForProject);
+router.get("/:projectId", getReviewsForProject);
 router.post(
   "/generate",
   authenticate,
