@@ -9,7 +9,7 @@ const router: Router = Router();
 router.get("/stats", getSupervisorStats);
 
 router.get(
-  "/pending",
+  "/projects",
   authenticate,
   authorize(["SUPERVISOR"]),
   getSupervisorProjects,
