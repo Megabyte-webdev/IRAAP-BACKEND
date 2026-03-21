@@ -1,8 +1,12 @@
 import type { Request, Response } from "express";
 import { db } from "../config/db.js";
-import { projects, reviews, statusEnum } from "../database/schema.js";
-import { and, eq, sql } from "drizzle-orm";
-import { title } from "node:process";
+import {
+  projects,
+  reviews,
+  reviewTasks,
+  statusEnum,
+} from "../database/schema.js";
+import { and, eq, not, sql } from "drizzle-orm";
 
 export const getSupervisorStats = async (req: Request, res: Response) => {
   const supervisorId = Number((req as any).user.userId);
@@ -93,6 +97,24 @@ export const updateProjectStatus = async (req: Request, res: Response) => {
       return res
         .status(403)
         .json({ message: "You cannot update this project" });
+    }
+
+    // Check if all review tasks are verified
+    const unverifiedTasks = await db
+      .select()
+      .from(reviewTasks)
+      .where(
+        and(
+          eq(reviewTasks.projectId, projectId),
+          not(eq(reviewTasks.status, "VERIFIED")),
+        ),
+      );
+
+    if (unverifiedTasks.length > 0) {
+      return res.status(400).json({
+        message:
+          "Cannot update project status: all review tasks must be verified first",
+      });
     }
 
     // Update status

@@ -17,6 +17,12 @@ export const statusEnum = pgEnum("status", [
   "REJECTED",
   "REVISION_REQUESTED",
 ]);
+export const reviewTaskStatusEnum = pgEnum("review_task_status", [
+  "PENDING",
+  "IN_PROGRESS",
+  "COMPLETED",
+  "VERIFIED",
+]);
 
 export const users = pgTable(
   "users",
@@ -42,6 +48,16 @@ export const users = pgTable(
     supervisorIndex: index("users_supervisor_idx").on(table.supervisorId),
   }),
 );
+
+export const categories = pgTable("categories", {
+  id: serial("id").primaryKey(),
+
+  name: varchar("name", { length: 255 }).unique().notNull(),
+
+  description: text("description"),
+
+  createdAt: timestamp("created_at").defaultNow(),
+});
 
 export const projects = pgTable(
   "projects",
@@ -82,16 +98,6 @@ export const projects = pgTable(
   }),
 );
 
-export const categories = pgTable("categories", {
-  id: serial("id").primaryKey(),
-
-  name: varchar("name", { length: 255 }).unique().notNull(),
-
-  description: text("description"),
-
-  createdAt: timestamp("created_at").defaultNow(),
-});
-
 export const reviews = pgTable("reviews", {
   id: serial("id").primaryKey(),
 
@@ -103,12 +109,51 @@ export const reviews = pgTable("reviews", {
     .references(() => users.id)
     .notNull(),
 
-  comments: text("comments").notNull(),
-
-  rating: integer("rating"),
+  summary: text("summary"),
 
   createdAt: timestamp("created_at").defaultNow(),
 });
+
+export const reviewTasks = pgTable(
+  "review_tasks",
+  {
+    id: serial("id").primaryKey(),
+
+    reviewId: integer("review_id")
+      .references(() => reviews.id, { onDelete: "cascade" })
+      .notNull(),
+
+    projectId: integer("project_id")
+      .references(() => projects.id, { onDelete: "cascade" })
+      .notNull(),
+
+    title: varchar("title", { length: 255 }).notNull(),
+
+    description: text("description"),
+
+    status: reviewTaskStatusEnum("status").default("PENDING").notNull(),
+
+    studentNote: text("student_note"),
+
+    completedAt: timestamp("completed_at"),
+
+    verifiedBy: integer("verified_by").references(() => users.id),
+
+    verifiedAt: timestamp("verified_at"),
+
+    createdAt: timestamp("created_at").defaultNow(),
+
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => ({
+    reviewIndex: index("review_tasks_review_idx").on(table.reviewId),
+    projectIndex: index("review_tasks_project_idx").on(table.projectId),
+    uniqueTaskPerReview: unique("unique_task_per_review").on(
+      table.reviewId,
+      table.title,
+    ),
+  }),
+);
 
 export const downloads = pgTable(
   "downloads",

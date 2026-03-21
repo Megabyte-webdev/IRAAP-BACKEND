@@ -4,36 +4,83 @@ import { users } from "../database/schema.js";
 import { eq } from "drizzle-orm";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
+import { z } from "zod";
+
+// Zod schema for validation
+const loginSchema = z.object({
+  email: z.string().email(),
+  password: z.string().min(6),
+});
 
 export const login = async (req: Request, res: Response) => {
-  const { email, password } = req.body;
+  try {
+    // Validate input
+    const { email, password } = loginSchema.parse(req.body);
 
-  //add validation using zod and also add supervisor name using the supervisorId in the user table and return it in the response
-  const user: any = await db.query.users.findFirst({
-    where: eq(users.email, email),
-  });
+    // Find user
+    const user: any = await db.query.users.findFirst({
+      where: eq(users.email, email),
+    });
 
-  if (!user) throw new Error("User not found");
+    if (!user) {
+      return res
+        .status(404)
+        .json({ success: false, message: "User not found" });
+    }
 
-  const validPassword = await bcrypt.compare(password, user.password);
-  if (!validPassword) throw new Error("Invalid credentials");
+    // Check password
+    const validPassword = await bcrypt.compare(password, user.password);
+    if (!validPassword) {
+      return res
+        .status(401)
+        .json({ success: false, message: "Invalid credentials" });
+    }
 
-  const token = jwt.sign(
-    { userId: user.id, role: user.role, supervisorId: user.supervisorId },
-    process.env.JWT_SECRET!,
-    {
-      expiresIn: "1d",
-    },
-  );
+    // Optional: fetch supervisor name if exists
+    let supervisorName = null;
+    if (user.supervisorId) {
+      const supervisor: any = await db.query.users.findFirst({
+        where: eq(users.id, user.supervisorId),
+      });
+      supervisorName = supervisor?.fullName ?? null;
+    }
 
-  res.json({
-    token,
-    user: {
-      id: user.id,
-      fullName: user.fullName,
-      email: user.email,
-      supervisorId: user.supervisorId,
-      role: user.role,
-    },
-  });
+    // Generate JWT
+    const token = jwt.sign(
+      { userId: user.id, role: user.role, supervisorId: user.supervisorId },
+      process.env.JWT_SECRET!,
+      { expiresIn: "1d" },
+    );
+
+    // Respond with token + user info
+    return res.json({
+      success: true,
+      token,
+      user: {
+        id: user.id,
+        fullName: user.fullName,
+        email: user.email,
+        role: user.role,
+        supervisorId: user.supervisorId,
+        supervisorName,
+      },
+    });
+  } catch (err: any) {
+    // Handle Zod validation errors
+    if (err instanceof z.ZodError) {
+      return res.status(400).json({
+        success: false,
+        message: "Validation failed",
+        errors: err.issues,
+      });
+    }
+
+    console.error("Login error:", err);
+
+    // Catch all other errors
+    return res.status(500).json({
+      success: false,
+      message: err.message || "Internal Server Error",
+    });
+  }
 };

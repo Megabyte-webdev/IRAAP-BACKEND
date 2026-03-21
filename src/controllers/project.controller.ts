@@ -23,7 +23,6 @@ const projectSchema = z.object({
     .transform((arr) => arr.map((k) => sanitizeString(k))),
 });
 
-// -------------------- SUBMIT PROJECT --------------------
 export const submitProject = async (req: Request, res: Response) => {
   const studentId = (req as any).user?.userId;
   const supervisorId = (req as any).user?.supervisorId;
@@ -39,7 +38,7 @@ export const submitProject = async (req: Request, res: Response) => {
   } catch (err: any) {
     return res
       .status(400)
-      .json({ message: "Invalid input", error: err.errors });
+      .json({ message: "Invalid input", error: err.issues });
   }
 
   // Sanitize fields
@@ -99,7 +98,6 @@ export const submitProject = async (req: Request, res: Response) => {
   }
 };
 
-// -------------------- UPDATE PROJECT --------------------
 export const updateProject = async (req: Request, res: Response) => {
   const projectId = Number(req.params.id);
   const studentId = (req as any).user?.userId;
@@ -172,7 +170,6 @@ export const updateProject = async (req: Request, res: Response) => {
   }
 };
 
-// -------------------- GET PENDING PROJECTS --------------------
 export const getPendingProjects = async (req: Request, res: Response) => {
   const supervisorId = Number((req as any).user.id);
   try {
@@ -212,7 +209,6 @@ export const getStudentSubmissions = async (req: Request, res: Response) => {
   }
 };
 
-// -------------------- GET PROJECT DETAILS --------------------
 export const getProjectDetails = async (req: Request, res: Response) => {
   const projectId = Number(req.params.id);
 
