@@ -1,6 +1,8 @@
 import { Router } from "express";
 import {
   createReviewWithTasks,
+  deleteReview,
+  deleteTask,
   getProjectReviewsWithTasks,
   updateTaskByStudent,
   verifyTaskBySupervisor,
@@ -35,6 +37,20 @@ router.patch(
   authenticate,
   authorize(["SUPERVISOR"]),
   verifyTaskBySupervisor,
+);
+
+router.delete(
+  "/tasks/:taskId",
+  authenticate,
+  authorize(["SUPERVISOR", "ADMIN"]),
+  deleteTask,
+);
+
+router.delete(
+  "/:reviewId",
+  authenticate,
+  authorize(["SUPERVISOR", "ADMIN"]),
+  deleteReview,
 );
 
 export default router;

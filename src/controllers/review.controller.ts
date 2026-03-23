@@ -3,72 +3,6 @@ import { projects, reviews, reviewTasks } from "../database/schema.js";
 import { and, eq, inArray } from "drizzle-orm";
 import { db } from "../config/db.js";
 
-export const generateReview = async (req: Request, res: Response) => {
-  const { supervisorId, comments, rating, projectId } = req.body;
-
-  try {
-    const result = await db.transaction(async (tx) => {
-      // Verify the project exists and belongs to supervisor
-      const project = await tx.query.projects.findFirst({
-        where: and(
-          eq(projects.id, projectId),
-          eq(projects.supervisorId, supervisorId),
-        ),
-      });
-
-      if (!project) {
-        throw new Error("Project not found or access denied");
-      }
-
-      // Insert the review
-      const review = {
-        projectId: project.id,
-        reviewerId: supervisorId,
-        comments,
-        rating,
-      };
-      await tx.insert(reviews).values(review);
-
-      //  Update project status if provided
-      let updatedProject = project;
-
-      const updatedRows = await tx
-        .update(projects)
-        .set({ status: "REVISION_REQUESTED" })
-        .where(eq(projects.id, projectId))
-        .returning();
-      updatedProject = updatedRows[0];
-
-      return { review, project: updatedProject };
-    });
-
-    res.status(201).json({
-      message: "Review submitted successfully",
-      review: result.review,
-      project: result.project,
-    });
-  } catch (error) {
-    console.error("Error generating review:", error);
-    res.status(500).json({ message: "Failed to submit review", error });
-  }
-};
-
-export const getReviewsForProject = async (req: Request, res: Response) => {
-  const { projectId } = req.params;
-  try {
-    const allReviews = await db.query.reviews.findMany({
-      where: eq(reviews.projectId, Number(projectId)),
-    });
-
-    res
-      .status(200)
-      .json({ message: "Reviews fetched successfully", reviews: allReviews });
-  } catch (error) {
-    console.error("Error fetching reviews:", error);
-    res.status(500).json({ message: "Failed to fetch reviews", error });
-  }
-};
-
 export const createReviewWithTasks = async (req: Request, res: Response) => {
   const { projectId, summary, tasks } = req.body;
   const supervisorId = Number((req as any).user.userId);
@@ -290,5 +224,61 @@ export const verifyTaskBySupervisor = async (req: Request, res: Response) => {
     console.error(err);
     const message = err instanceof Error ? err.message : "Unknown error";
     res.status(500).json({ message: "Failed to verify task", error: message });
+  }
+};
+
+export const deleteTask = async (req: Request, res: Response) => {
+  const { taskId } = req.params;
+
+  try {
+    // 1. Check if task exists
+    const existingTask = await db.query.reviewTasks.findFirst({
+      where: eq(reviewTasks.id, Number(taskId)),
+    });
+
+    if (!existingTask) {
+      return res.status(404).json({ message: "Task not found" });
+    }
+
+    // 2. Perform deletion
+    await db.delete(reviewTasks).where(eq(reviewTasks.id, Number(taskId)));
+
+    return res.status(200).json({ message: "Task deleted successfully" });
+  } catch (error) {
+    console.error("Error deleting task:", error);
+    return res.status(500).json({ message: "Internal server error" });
+  }
+};
+
+export const deleteReview = async (req: Request, res: Response) => {
+  const { reviewId } = req.params;
+
+  try {
+    // 1. Check if review exists
+    const existingReview = await db.query.reviews.findFirst({
+      where: eq(reviews.id, Number(reviewId)),
+    });
+
+    if (!existingReview) {
+      return res.status(404).json({ message: "Review round not found" });
+    }
+
+    // 2. Transaction to ensure both Review and its Tasks are removed safely
+    await db.transaction(async (tx) => {
+      // Delete all tasks linked to this review first
+      await tx
+        .delete(reviewTasks)
+        .where(eq(reviewTasks.reviewId, Number(reviewId)));
+
+      // Delete the review record itself
+      await tx.delete(reviews).where(eq(reviews.id, Number(reviewId)));
+    });
+
+    return res.status(200).json({
+      message: "Review round and all associated tasks deleted successfully",
+    });
+  } catch (error) {
+    console.error("Error deleting review:", error);
+    return res.status(500).json({ message: "Internal server error" });
   }
 };
