@@ -16,6 +16,12 @@ export async function seed() {
       role: "SUPERVISOR" as const,
     },
     {
+      fullName: "Mr. Afeez",
+      email: "afeez@oouagoiwoye.edu.ng",
+      password: hashedPassword, //afeez
+      role: "SUPERVISOR" as const,
+    },
+    {
       fullName: "Mr. G.M. Afolabi",
       email: "afolabimubarak18@gmail.com",
       password: hashedPassword2,
