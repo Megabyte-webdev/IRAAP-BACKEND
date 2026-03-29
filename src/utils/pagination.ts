@@ -1,26 +1,30 @@
-import { sql } from "drizzle-orm";
+import { sql, Subquery } from "drizzle-orm";
 import type { PgSelect } from "drizzle-orm/pg-core";
-import { db } from "../config/db.js";
 
 interface PaginationParams {
   page: number;
   limit: number;
 }
 
-export const withPagination = async <T extends PgSelect>(
-  qb: T,
-  params: PaginationParams,
-) => {
-  const { page, limit } = params;
+export const withPagination = async <T extends PgSelect>({
+  dataQuery,
+  countQuery,
+  page,
+  limit,
+}: {
+  dataQuery: any;
+  countQuery: any;
+  page: number;
+  limit: number;
+}) => {
   const offset = (page - 1) * limit;
 
-  const countResult = await db.execute(
-    sql`SELECT count(*) FROM (${qb}) as count_subquery`,
-  );
+  // Fast count query
+  const countResult = await countQuery;
+  const total = Number(countResult[0]?.count || 0);
 
-  const total = Number(countResult.rows[0]?.count || 0);
-
-  const data = await (qb as any).limit(limit).offset(offset);
+  // Paginated data query
+  const data = await (dataQuery as any).limit(limit).offset(offset);
 
   return {
     data,
