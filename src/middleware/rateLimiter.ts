@@ -1,28 +1,27 @@
 import type { Express } from "express";
 import { rateLimit } from "express-rate-limit";
-import RedisStore from "rate-limit-redis";
+import * as RedisStore from "rate-limit-redis"; // use .default for the constructor
+import type { RedisReply } from "rate-limit-redis";
 import helmet from "helmet";
 import { redisConnection } from "../config/redis.js";
 
 export const applyGlobalSecurity = (app: Express) => {
-  // 1. Set Security Headers
-  // Helmet helps prevent XSS, Content Sniffing, and Clickjacking
+  // 1. Security Headers
   app.use(helmet());
 
-  // 2. Redis-Backed Rate Limiter
+  // 2. Redis-Backed Global Rate Limiter
   const globalLimiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 200, // Limit each IP to 200 requests per window
+    max: 200, // max requests per IP per window
     standardHeaders: true,
     legacyHeaders: false,
-
-    // REDIS STORE: This makes the limit "stick" even if the server restarts
-    store: new RedisStore({
-      // @ts-expect-error - RedisStore types can be finicky with ioredis versions
-      sendCommand: (...args: string[]) => redisConnection.call(...args),
-      prefix: "rl:", // Prefix for redis keys to avoid collision with BullMQ
+    store: new RedisStore.default({
+      // rate-limit-redis expects a store with sendCommand
+      sendCommand: (...args: [string, ...string[]]): Promise<RedisReply> => {
+        return redisConnection.call(...args) as Promise<RedisReply>;
+      },
+      prefix: "rl:",
     }),
-
     message: {
       status: 429,
       success: false,
@@ -33,17 +32,22 @@ export const applyGlobalSecurity = (app: Express) => {
 
   app.use(globalLimiter);
 
-  // 3. Specific Brute-Force Protection for Auth (Optional but Recommended)
+  // 3. Auth-specific brute-force limiter
   const authLimiter = rateLimit({
     windowMs: 60 * 60 * 1000, // 1 hour
-    max: 10, // Only 10 failed attempts per hour
-    store: new RedisStore({
-      // @ts-expect-error
-      sendCommand: (...args: string[]) => redisConnection.call(...args),
+    max: 10, // max failed attempts
+    skipSuccessfulRequests: true, // only block failures
+    store: new RedisStore.default({
+      sendCommand: (...args: [string, ...string[]]): Promise<RedisReply> => {
+        return redisConnection.call(...args) as Promise<RedisReply>;
+      },
       prefix: "rl-auth:",
     }),
-    skipSuccessfulRequests: true, // Only block if they are failing
-    message: { message: "Too many login attempts. Account locked for 1 hour." },
+    message: {
+      status: 429,
+      success: false,
+      message: "Too many login attempts. Account locked for 1 hour.",
+    },
   });
 
   app.use("/api/auth/login", authLimiter);
