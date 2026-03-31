@@ -1,14 +1,13 @@
 import nodemailer from "nodemailer";
 
 const transporter = nodemailer.createTransport({
-  host: process.env.EMAIL_HOST, // e.g., smtp.resend.com or smtp.gmail.com
-  port: parseInt("465"), //process.env.EMAIL_PORT
-  secure: true, // true for 465, false for other ports
+  host: process.env.EMAIL_HOST,
+  port: 465,
+  secure: true, // true for 465, false for 587
   auth: {
     user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_PASS,
   },
-  requireTLS: true,
 });
 
 export const verifyTransporter = async () => {

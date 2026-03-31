@@ -6,7 +6,8 @@ import * as schema from "../database/schema.js";
 dotenv.config();
 
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
+  connectionString:
+    process.env.DATABASE_URL_UNPOOLED || process.env.DATABASE_URL,
   ssl: { rejectUnauthorized: false },
 });
 
