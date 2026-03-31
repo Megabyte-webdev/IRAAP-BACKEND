@@ -50,6 +50,5 @@ app.get("/", (req, res) => {
 
 app.listen(port, () => {
   testDbConnection();
-  sendEmail("afolabimubarak18@gmail.com", "Testing", "<h1>New Test </h1>");
   console.log(`Server is running on http://localhost:${port}`);
 });
