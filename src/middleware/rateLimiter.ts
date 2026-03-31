@@ -1,5 +1,5 @@
 import type { Express } from "express";
-import rateLimit from "express-rate-limit";
+import { rateLimit } from "express-rate-limit";
 import RedisStore from "rate-limit-redis"; // use .default for the constructor
 import type { RedisReply } from "rate-limit-redis";
 import helmet from "helmet";
