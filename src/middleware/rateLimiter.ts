@@ -8,7 +8,7 @@ import { redisConnection } from "../config/redis.js";
 export const applyGlobalSecurity = (app: Express) => {
   // 1. Security Headers
   app.use((helmet as any)());
-  const store = new RedisStore({
+  const store = new (RedisStore as any)({
     sendCommand: (...args: [string, ...string[]]): Promise<RedisReply> => {
       return redisConnection.call(...args) as Promise<RedisReply>;
     },
