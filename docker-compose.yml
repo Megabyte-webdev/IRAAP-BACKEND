@@ -28,7 +28,7 @@ services:
             - node_modules
         - action: rebuild
           path: package.json
-    command: pnpm run start
+    command: pnpm run build
     restart: always
 
 volumes:
