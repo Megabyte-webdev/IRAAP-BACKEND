@@ -8,7 +8,7 @@ export const mainLayout = (content: any) => {
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
 </head>
 <body style="margin: 0; padding: 0; background-color: #f1f5f9; font-family: sans-serif;">
-  <table border="0" cellpadding="0" cellspacing="0" width="100%" style="table-layout: fixed;">
+  <table border="0" cellpadding="0" cellspacing="0" width="100vw" style="table-layout: fixed;">
     <tr>
       <td align="center" style="padding: 40px 0;">
         <table border="0" cellpadding="0" cellspacing="0" width="600" style="background-color: #ffffff; border-radius: 12px; border: 1px solid #e2e8f0; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
