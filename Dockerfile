@@ -18,4 +18,4 @@ COPY . .
 EXPOSE 8000
 
 # Start app
-CMD ["pnpm", "run", "dev"]
+CMD ["pnpm", "run", "start"]
