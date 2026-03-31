@@ -11,6 +11,9 @@ importers:
       '@types/nodemailer':
         specifier: ^7.0.11
         version: 7.0.11
+      '@types/rate-limit-redis':
+        specifier: ^3.0.0
+        version: 3.0.0(express-rate-limit@8.3.1(express@5.2.1))
       bcrypt:
         specifier: ^6.0.0
         version: 6.0.0
@@ -663,6 +666,10 @@ packages:
 
   '@types/range-parser@1.2.7':
     resolution: {integrity: sha512-hKormJbkJqzQGhziax5PItDUTMAM9uE2XXQmM37dyd4hVM+5aVl7oVxMVUiVQn2oCQFN/LKCZdvSM0pFRqbSmQ==}
+
+  '@types/rate-limit-redis@3.0.0':
+    resolution: {integrity: sha512-BW3tros2nmZOJLkoQPBViUhzOWBOwFnIWUevG5+NpFVmngb8RulB4p/nkEhYyOrrKR5UJ74GCT7nyDG6zr+isQ==}
+    deprecated: This is a stub types definition. rate-limit-redis provides its own type definitions, so you do not need this installed.
 
   '@types/send@1.2.1':
     resolution: {integrity: sha512-arsCikDvlU99zl1g69TcAB3mzZPpxgw0UQnaHeC1Nwb015xp8bknZv5rIfri9xTOcMuaVgvabfIRA7PSZVuZIQ==}
@@ -1944,6 +1951,12 @@ snapshots:
   '@types/qs@6.15.0': {}
 
   '@types/range-parser@1.2.7': {}
+
+  '@types/rate-limit-redis@3.0.0(express-rate-limit@8.3.1(express@5.2.1))':
+    dependencies:
+      rate-limit-redis: 4.3.1(express-rate-limit@8.3.1(express@5.2.1))
+    transitivePeerDependencies:
+      - express-rate-limit
 
   '@types/send@1.2.1':
     dependencies:
