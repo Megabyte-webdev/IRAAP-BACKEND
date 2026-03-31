@@ -44,15 +44,15 @@ importers:
       multer:
         specifier: ^2.1.1
         version: 2.1.1
-      nodemailer:
-        specifier: ^8.0.4
-        version: 8.0.4
       pg:
         specifier: ^8.20.0
         version: 8.20.0
       rate-limit-redis:
         specifier: ^4.3.1
         version: 4.3.1(express-rate-limit@8.3.1(express@5.2.1))
+      resend:
+        specifier: ^6.10.0
+        version: 6.10.0
       zod:
         specifier: ^4.3.6
         version: 4.3.6
@@ -75,9 +75,6 @@ importers:
       '@types/node':
         specifier: ^25.5.0
         version: 25.5.0
-      '@types/nodemailer':
-        specifier: ^7.0.11
-        version: 7.0.11
       '@types/pg':
         specifier: ^8.18.0
         version: 8.18.0
@@ -601,6 +598,9 @@ packages:
     cpu: [x64]
     os: [win32]
 
+  '@stablelib/base64@1.0.1':
+    resolution: {integrity: sha512-1bnPQqSxSuc3Ii6MhBysoWCg58j97aUjuCSZrGSmDxNqtytIi0k8utUenAwTZN4V5mXXYGsVUI9zeBqy+jBOSQ==}
+
   '@tsconfig/node10@1.0.12':
     resolution: {integrity: sha512-UCYBaeFvM11aU2y3YPZ//O5Rhj+xKyzy7mvcIoAjASbigy8mHMryP5cK7dgjlz2hWxh1g5pLw084E0a/wlUSFQ==}
 
@@ -645,9 +645,6 @@ packages:
 
   '@types/node@25.5.0':
     resolution: {integrity: sha512-jp2P3tQMSxWugkCUKLRPVUpGaL5MVFwF8RDuSRztfwgN1wmqJeMSbKlnEtQqU8UrhTmzEmZdu2I6v2dpp7XIxw==}
-
-  '@types/nodemailer@7.0.11':
-    resolution: {integrity: sha512-E+U4RzR2dKrx+u3N4DlsmLaDC6mMZOM/TPROxA0UAPiTgI0y4CEFBmZE+coGWTjakDriRsXG368lNk1u9Q0a2g==}
 
   '@types/pg@8.18.0':
     resolution: {integrity: sha512-gT+oueVQkqnj6ajGJXblFR4iavIXWsGAFCk3dP4Kki5+a9R4NMt0JARdk6s8cUKcfUoqP5dAtDSLU8xYUTFV+Q==}
@@ -985,6 +982,9 @@ packages:
     resolution: {integrity: sha512-hIS4idWWai69NezIdRt2xFVofaF4j+6INOpJlVOLDO8zXGpUVEVzIYk12UUi2JzjEzWL3IOAxcTubgz9Po0yXw==}
     engines: {node: '>= 18'}
 
+  fast-sha256@1.3.0:
+    resolution: {integrity: sha512-n11RGP/lrWEFI/bWdygLxhI+pVeo1ZYIVwvvPkW7azl/rOy+F3HYRZ2K5zeE9mmkhQppyv9sQFx0JM9UabnpPQ==}
+
   fill-range@7.1.1:
     resolution: {integrity: sha512-YsGpe3WHLK8ZYi4tWDg2Jy3ebRz2rXowDxnld4bkQB00cc/1Zw9AWnC0i9ztDJitivtQvaI9KaLyKrc+hBW0yg==}
     engines: {node: '>=8'}
@@ -1231,10 +1231,6 @@ packages:
     resolution: {integrity: sha512-LA4ZjwlnUblHVgq0oBF3Jl/6h/Nvs5fzBLwdEF4nuxnFdsfajde4WfxtJr3CaiH+F6ewcIB/q4jQ4UzPyid+CQ==}
     hasBin: true
 
-  nodemailer@8.0.4:
-    resolution: {integrity: sha512-k+jf6N8PfQJ0Fe8ZhJlgqU5qJU44Lpvp2yvidH3vp1lPnVQMgi4yEEMPXg5eJS1gFIJTVq1NHBk7Ia9ARdSBdQ==}
-    engines: {node: '>=6.0.0'}
-
   nodemon@3.1.14:
     resolution: {integrity: sha512-jakjZi93UtB3jHMWsXL68FXSAosbLfY0In5gtKq3niLSkrWznrVBzXFNOEMJUfc9+Ke7SHWoAZsiMkNP3vq6Jw==}
     engines: {node: '>=10'}
@@ -1311,6 +1307,9 @@ packages:
     resolution: {integrity: sha512-JU3teHTNjmE2VCGFzuY8EXzCDVwEqB2a8fsIvwaStHhAWJEeVd1o1QD80CU6+ZdEXXSLbSsuLwJjkCBWqRQUVA==}
     engines: {node: '>=8.6'}
 
+  postal-mime@2.7.4:
+    resolution: {integrity: sha512-0WdnFQYUrPGGTFu1uOqD2s7omwua8xaeYGdO6rb88oD5yJ/4pPHDA4sdWqfD8wQVfCny563n/HQS7zTFft+f/g==}
+
   postgres-array@2.0.0:
     resolution: {integrity: sha512-VpZrUqU5A69eQyW2c5CA1jtLecCsN2U/bD6VilrFDWq5+5UIEVO7nazS3TEcHf1zuPYO/sqGvUvW62g86RXZuA==}
     engines: {node: '>=4'}
@@ -1367,6 +1366,15 @@ packages:
   redis-parser@3.0.0:
     resolution: {integrity: sha512-DJnGAeenTdpMEH6uAJRK/uiyEIH9WVsUmoLwzudwGJUwZPp80PDBWPHXSAGNPwNvIXAbe7MSUB1zQFugFml66A==}
     engines: {node: '>=4'}
+
+  resend@6.10.0:
+    resolution: {integrity: sha512-i7CwZpYj4Oho1RxsTpLcCUkO08+HiL4NXrm6jLJ2WzJ89UGI8eROSieLONJA3hnUrf1OYnCyfq5F6POnHUMv1Q==}
+    engines: {node: '>=20'}
+    peerDependencies:
+      '@react-email/render': '*'
+    peerDependenciesMeta:
+      '@react-email/render':
+        optional: true
 
   resolve-pkg-maps@1.0.0:
     resolution: {integrity: sha512-seS2Tj26TBVOC2NIc2rOe2y2ZO7efxITtLZcGSOnHHNOQ7CkiUBfw0Iw2ck6xkIhPwLhKNLS8BO+hEpngQlqzw==}
@@ -1441,6 +1449,9 @@ packages:
   standard-as-callback@2.1.0:
     resolution: {integrity: sha512-qoRRSyROncaz1z0mvYqIE4lCd9p2R90i6GxW3uZv5ucSu8tU7B5HXUP1gG8pVZsYNVaXjk8ClXHPttLyxAL48A==}
 
+  standardwebhooks@1.0.0:
+    resolution: {integrity: sha512-BbHGOQK9olHPMvQNHWul6MYlrRTAOKn03rOe4A8O3CLWhNf4YHBqq2HJKKC+sfqpxiBY52pNeesD6jIiLDz8jg==}
+
   statuses@2.0.2:
     resolution: {integrity: sha512-DvEy55V3DB7uknRo+4iOGT5fP1slR8wQohVdknigZPMpMstaKJQWhwiYBACJE3Ul2pTnATihhBYnRhZQHGBiRw==}
     engines: {node: '>= 0.8'}
@@ -1467,6 +1478,9 @@ packages:
   supports-preserve-symlinks-flag@1.0.0:
     resolution: {integrity: sha512-ot0WnXS9fgdkgIcePe6RHNk1WA8+muPa6cSjeR3V8K27q9BB1rTE3R1p7Hv0z1ZyAc8s6Vvv8DIyWf681MAt0w==}
     engines: {node: '>= 0.4'}
+
+  svix@1.88.0:
+    resolution: {integrity: sha512-vm/JrrUd3bVyBE+3L33TIyVSs8gS5fYx7lrISvKlDJXTYX1ACH4REX8P1tHxsSKoZi/rvifM1t0XRc5Vc45THw==}
 
   to-regex-range@5.0.1:
     resolution: {integrity: sha512-65P7iz6X5yEr1cwcgvQxbbIw7Uk3gOy5dIdtZ4rDveLqhrdJP+Li/Hx6tyK0NEb+2GCyneCMJiGqrADCSNk8sQ==}
@@ -1548,6 +1562,10 @@ packages:
 
   util-deprecate@1.0.2:
     resolution: {integrity: sha512-EPD5q1uXyFxJpCrLnCc1nHnq3gOa6DZBocAIiI2TaSCA7VCJ1UJDMagCzIkXNsUYfD1daK//LTEQ8xiIbrHtcw==}
+
+  uuid@10.0.0:
+    resolution: {integrity: sha512-8XkAphELsDnEGrDxUOHB3RGvXz6TeuYSGEZBOjtTtPm2lwhGBjLgOzLHB63IUWfBpNucQjND6d3AOudO+H3RWQ==}
+    hasBin: true
 
   uuid@11.1.0:
     resolution: {integrity: sha512-0/A9rDy9P7cJ+8w1c9WD9V//9Wj15Ce2MPz8Ri6032usz+NfePxx5AcN3bN+r6ZL6jEo066/yNYB3tn4pQEx+A==}
@@ -1843,6 +1861,8 @@ snapshots:
   '@msgpackr-extract/msgpackr-extract-win32-x64@3.0.3':
     optional: true
 
+  '@stablelib/base64@1.0.1': {}
+
   '@tsconfig/node10@1.0.12': {}
 
   '@tsconfig/node12@1.0.11': {}
@@ -1897,10 +1917,6 @@ snapshots:
   '@types/node@25.5.0':
     dependencies:
       undici-types: 7.18.2
-
-  '@types/nodemailer@7.0.11':
-    dependencies:
-      '@types/node': 25.5.0
 
   '@types/pg@8.18.0':
     dependencies:
@@ -2250,6 +2266,8 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
+  fast-sha256@1.3.0: {}
+
   fill-range@7.1.1:
     dependencies:
       to-regex-range: 5.0.1
@@ -2498,8 +2516,6 @@ snapshots:
 
   node-gyp-build@4.8.4: {}
 
-  nodemailer@8.0.4: {}
-
   nodemon@3.1.14:
     dependencies:
       chokidar: 3.6.0
@@ -2572,6 +2588,8 @@ snapshots:
 
   picomatch@2.3.1: {}
 
+  postal-mime@2.7.4: {}
+
   postgres-array@2.0.0: {}
 
   postgres-bytea@1.0.1: {}
@@ -2621,6 +2639,11 @@ snapshots:
   redis-parser@3.0.0:
     dependencies:
       redis-errors: 1.2.0
+
+  resend@6.10.0:
+    dependencies:
+      postal-mime: 2.7.4
+      svix: 1.88.0
 
   resolve-pkg-maps@1.0.0: {}
 
@@ -2720,6 +2743,11 @@ snapshots:
 
   standard-as-callback@2.1.0: {}
 
+  standardwebhooks@1.0.0:
+    dependencies:
+      '@stablelib/base64': 1.0.1
+      fast-sha256: 1.3.0
+
   statuses@2.0.2: {}
 
   streamsearch@1.1.0: {}
@@ -2737,6 +2765,11 @@ snapshots:
       has-flag: 3.0.0
 
   supports-preserve-symlinks-flag@1.0.0: {}
+
+  svix@1.88.0:
+    dependencies:
+      standardwebhooks: 1.0.0
+      uuid: 10.0.0
 
   to-regex-range@5.0.1:
     dependencies:
@@ -2822,6 +2855,8 @@ snapshots:
   unpipe@1.0.0: {}
 
   util-deprecate@1.0.2: {}
+
+  uuid@10.0.0: {}
 
   uuid@11.1.0: {}
 
