@@ -46,8 +46,8 @@ app.get("/", (req, res) => {
   res.send("Institutional Research Repository Server Running");
 });
 
-verifyTransporter();
-testDbConnection();
 app.listen(port, () => {
+  verifyTransporter();
+  testDbConnection();
   console.log(`Server is running on http://localhost:${port}`);
 });

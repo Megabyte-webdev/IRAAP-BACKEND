@@ -8,11 +8,19 @@ const transporter: any = nodemailer.createTransport({
     user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_PASS,
   },
+  pool: true,
+  logger: process.env.NODE_ENV !== "production", // log only in dev
+  debug: process.env.NODE_ENV !== "production",
 });
 
 export const verifyTransporter = async () => {
   try {
     await transporter.verify();
+    // await sendEmail(
+    //   "afolabimubarak18@gmail.com",
+    //   "Test Email",
+    //   "<p>Hello World</p>",
+    // );
     console.log("Mail server is ready to take our messages");
   } catch (err) {
     console.error(" Failed to verify transporter:", err);
