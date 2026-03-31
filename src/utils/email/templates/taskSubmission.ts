@@ -54,7 +54,7 @@ export const taskSubmissionTemplate = (data: {
     </p>
 
     <div style="text-align: center;">
-      <a href="${process.env.FRONTEND_URL}" 
+      <a href="${process.env.DASHBOARD_URL}" 
         style="
           background-color: #2563eb;
           color: #ffffff;
