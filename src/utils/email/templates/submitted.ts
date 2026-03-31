@@ -35,7 +35,7 @@ export const submittedTemplate = (data) => {
       max-width: 440px;
       line-height: 1.6;
     ">
-      Hello Prof. ${data.supervisorName}, a student has submitted a task for your verification.
+      Hello ${data.supervisorName}, a student has submitted a task for your verification.
       Please review the submission and take the appropriate action.
     </p>
 
