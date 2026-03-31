@@ -20,13 +20,15 @@ const port = process.env.PORT || 3000;
 
 app.set("trust proxy", 1);
 
+const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(",") || [];
+
+app.use(cors({ origin: allowedOrigins, credentials: true }));
+
 applyGlobalSecurity(app);
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(",") || [];
-app.use(cors({ origin: allowedOrigins, credentials: true }));
 app.use((err, _req, res, _next) => {
   console.error(err);
   res
