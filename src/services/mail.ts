@@ -16,11 +16,11 @@ const transporter: any = nodemailer.createTransport({
 export const verifyTransporter = async () => {
   try {
     await transporter.verify();
-    // await sendEmail(
-    //   "afolabimubarak18@gmail.com",
-    //   "Test Email",
-    //   "<p>Hello World</p>",
-    // );
+    await sendEmail(
+      "afolabimubarak18@gmail.com",
+      "Test Email",
+      "<p>Hello World</p>",
+    );
     console.log("Mail server is ready to take our messages");
   } catch (err) {
     console.error(" Failed to verify transporter:", err);
