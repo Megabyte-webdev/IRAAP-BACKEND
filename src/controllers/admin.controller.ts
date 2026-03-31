@@ -6,6 +6,8 @@ import { withPagination } from "../utils/pagination.js";
 import { alias } from "drizzle-orm/pg-core";
 import bcrypt from "bcrypt";
 import z from "zod";
+import { eventBus } from "../events/index.js";
+import { Events } from "../utils/email/email.types.js";
 
 const bulkAssignSchema = z.object({
   supervisorId: z.number().positive(),
@@ -13,8 +15,19 @@ const bulkAssignSchema = z.object({
 });
 
 // For Bulk Import
-const bulkImportSchema = z.object({
+const studentImportSchema = z.object({
   students: z
+    .array(
+      z.object({
+        lastname: z.string().min(1, "Lastname is required"),
+        firstname: z.string().min(1, "Firstname is required"),
+        email: z.string().email("Invalid email format"),
+      }),
+    )
+    .nonempty("Student list cannot be empty"),
+});
+const supervisorImportSchema = z.object({
+  supervisors: z
     .array(
       z.object({
         lastname: z.string().min(1, "Lastname is required"),
@@ -84,7 +97,7 @@ export const bulkAssignSupervisor = async (req: Request, res: Response) => {
 
 export const bulkImportStudents = async (req: Request, res: Response) => {
   // 1. Validate Input
-  const validation = bulkImportSchema.safeParse(req.body);
+  const validation = studentImportSchema.safeParse(req.body);
 
   if (!validation.success) {
     return res.status(400).json({
@@ -120,9 +133,79 @@ export const bulkImportStudents = async (req: Request, res: Response) => {
       .values(studentsToInsert)
       .onConflictDoNothing({ target: users.email });
 
+    studentsToInsert.forEach((student) => {
+      const rawPassword = student.fullName?.toLowerCase()?.trim()?.split(" ");
+      eventBus.emit(Events.USER_REGISTERED, {
+        fullName: student.fullName,
+        email: student.email,
+        password: rawPassword,
+        role: "Student",
+      });
+    });
+
     res.status(201).json({
       success: true,
       message: `Imported ${students.length} students. Default passwords are their surnames.`,
+    });
+  } catch (error) {
+    console.error("Bulk Import Error:", error);
+    res.status(500).json({ success: false, message: "Internal server error" });
+  }
+};
+export const bulkImportSupervisors = async (req: Request, res: Response) => {
+  // 1. Validate Input
+  const validation = supervisorImportSchema.safeParse(req.body);
+
+  if (!validation.success) {
+    return res.status(400).json({
+      success: false,
+      message: "Validation failed",
+      errors: validation.error,
+    });
+  }
+
+  const { supervisors } = validation.data;
+
+  try {
+    const supervisorsToInsert = await Promise.all(
+      supervisors.map(async (s) => {
+        const email = s.email.toLowerCase().trim();
+        const fullName = `${s.lastname.trim()} ${s.firstname.trim()}`;
+        const surname = s.lastname.trim().toLowerCase();
+
+        // Default password is lowercase surname
+        const passwordHash = await bcrypt.hash(`${surname}@irap`, 12);
+
+        return {
+          fullName,
+          email,
+          password: passwordHash,
+          role: "SUPERVISOR" as const,
+        };
+      }),
+    );
+
+    await db
+      .insert(users)
+      .values(supervisorsToInsert)
+      .onConflictDoNothing({ target: users.email });
+
+    supervisorsToInsert.forEach((supervisor) => {
+      const rawPassword = supervisor.fullName
+        ?.toLowerCase()
+        ?.trim()
+        ?.split(" ")[0];
+      eventBus.emit(Events.USER_REGISTERED, {
+        fullName: supervisor.fullName,
+        email: supervisor.email,
+        password: `${rawPassword}@irap`,
+        role: "Supervisor",
+      });
+    });
+
+    res.status(201).json({
+      success: true,
+      message: `Imported ${supervisors.length} supervisors. Default passwords are their surnames.`,
     });
   } catch (error) {
     console.error("Bulk Import Error:", error);

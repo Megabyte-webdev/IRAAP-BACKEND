@@ -191,21 +191,28 @@ export const updateTaskByStudent = async (req: Request, res: Response) => {
     // Emit event for email to supervisor
     const project: any = await db.query.projects.findFirst({
       where: eq(projects.id, task.projectId),
-      with: { supervisor: true },
+      with: { supervisor: true, student: true },
     });
 
-    if (project?.supervisor?.email) {
-      const payload = {
+    // Only emit supervisor email when task is COMPLETED
+    if (updatedTask.status === "COMPLETED" && project?.supervisor?.email) {
+      eventBus.emit(Events.TASK_SUBMITTED, {
         supervisorEmail: project.supervisor.email,
         supervisorName: project.supervisor.fullName,
         studentName: (req as any).user.fullName,
         projectName: project.title,
         taskTitle: task.title,
         taskStatus: updatedTask.status,
-      };
-      eventBus.emit(Events.TASK_SUBMITTED, payload);
-      console.log("emitting event", payload);
+      });
+
+      eventBus.emit(Events.TASK_SUBMITTED_CONFIRMATION, {
+        studentEmail: (req as any).user.email,
+        studentName: (req as any).user.fullName,
+        projectName: project.title,
+        taskTitle: task.title,
+      });
     }
+
     res.status(200).json({
       message: "Task updated successfully",
       task: updatedTask,

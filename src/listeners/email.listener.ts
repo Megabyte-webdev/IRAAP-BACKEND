@@ -29,8 +29,6 @@ eventBus.on(Events.REVIEW_CREATED, async (data: any) => {
 });
 
 eventBus.on(Events.TASK_SUBMITTED, async (data: any) => {
-  console.log("event received", data);
-
   await emailQueue.add(
     "send-email",
     {
@@ -38,6 +36,21 @@ eventBus.on(Events.TASK_SUBMITTED, async (data: any) => {
       to: data.supervisorEmail,
       payload: {
         supervisorName: data.supervisorName,
+        studentName: data.studentName,
+        projectName: data.projectName,
+        taskTitle: data.taskTitle,
+      },
+    },
+    queueConfig,
+  );
+});
+eventBus.on(Events.TASK_SUBMITTED_CONFIRMATION, async (data: any) => {
+  await emailQueue.add(
+    "send-email",
+    {
+      type: "TASK_SUBMITTED_CONFIRMATION",
+      to: data.studentEmail,
+      payload: {
         studentName: data.studentName,
         projectName: data.projectName,
         taskTitle: data.taskTitle,
@@ -73,6 +86,23 @@ eventBus.on(Events.TASK_ASSIGNED, async (data: any) => {
         studentName: data.studentName,
         taskTitle: data.taskTitle,
         projectName: data.projectName,
+      },
+    },
+    queueConfig,
+  );
+});
+
+eventBus.on(Events.USER_REGISTERED, async (data: any) => {
+  await emailQueue.add(
+    "send-email",
+    {
+      type: "USER_REGISTERED", // Ensure your email processor/template handles this type
+      to: data.email,
+      payload: {
+        fullName: data.fullName,
+        password: data.password, // The temporary raw password
+        role: data.role,
+        email: data.email,
       },
     },
     queueConfig,

@@ -18,4 +18,6 @@ export enum Events {
   TASK_SUBMITTED = "task.submitted",
   TASK_VERIFIED = "task.verified",
   TASK_ASSIGNED = "task.pending",
+  USER_REGISTERED = "user.registered",
+  TASK_SUBMITTED_CONFIRMATION = "task.submitted.confirmation",
 }

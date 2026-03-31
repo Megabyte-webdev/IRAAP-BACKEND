@@ -2,6 +2,7 @@ import { Router } from "express";
 import {
   bulkAssignSupervisor,
   bulkImportStudents,
+  bulkImportSupervisors,
   getAdminDashboard,
   getStudents,
   getSupervisors,
@@ -33,6 +34,13 @@ router.post(
   authenticate,
   authorize(["ADMIN"]),
   bulkImportStudents,
+);
+
+router.post(
+  "/bulk-supervisors",
+  authenticate,
+  authorize(["ADMIN"]),
+  bulkImportSupervisors,
 );
 
 export default router;

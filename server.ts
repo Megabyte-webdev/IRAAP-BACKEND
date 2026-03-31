@@ -11,6 +11,7 @@ import { applyGlobalSecurity } from "./src/middleware/rateLimiter.js";
 import "./src/listeners/email.listener.js";
 import "./src/workers/email.worker.js";
 import { verifyTransporter } from "./src/services/mail.js";
+import { testDbConnection } from "./src/config/db.js";
 
 dotenv.config();
 
@@ -47,5 +48,6 @@ app.get("/", (req, res) => {
 
 app.listen(port, () => {
   verifyTransporter();
+  testDbConnection();
   console.log(`Server is running on http://localhost:${port}`);
 });

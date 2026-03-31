@@ -1,11 +1,15 @@
 import { mainLayout } from "../layouts/mainLayout.js";
 
-export const verifiedTemplate = (data) => {
+export const taskSubmissionTemplate = (data: {
+  studentName: string;
+  projectName: string;
+  taskTitle: string;
+}) => {
   const html = `
     <div style="text-align: center; margin-bottom: 20px;">
       <span style="
-        background-color: #ecfdf5;
-        color: #059669;
+        background-color: #e0f2fe;
+        color: #0284c7;
         padding: 6px 14px;
         border-radius: 999px;
         font-size: 11px;
@@ -13,7 +17,7 @@ export const verifiedTemplate = (data) => {
         letter-spacing: 0.05em;
         text-transform: uppercase;
       ">
-        Task Verified
+        Task Completed
       </span>
     </div>
 
@@ -24,7 +28,7 @@ export const verifiedTemplate = (data) => {
       font-weight: 700;
       text-align: center;
     ">
-      Great job, ${data.studentName}!
+      Well done, ${data.studentName}!
     </h2>
 
     <p style="
@@ -35,7 +39,7 @@ export const verifiedTemplate = (data) => {
       max-width: 440px;
       line-height: 1.6;
     ">
-      Your work on <strong>"${data.taskTitle}"</strong> has been reviewed and officially verified by your supervisor.
+      You have successfully completed the task <strong>"${data.taskTitle}"</strong> under the project <strong>"${data.projectName}"</strong>.
     </p>
 
     <p style="
@@ -46,7 +50,7 @@ export const verifiedTemplate = (data) => {
       max-width: 440px;
       line-height: 1.5;
     ">
-      The task is now archived in the repository as a completed milestone.
+      Your submission is now awaiting review by your supervisor. You will be notified once it has been verified.
     </p>
 
     <div style="text-align: center;">
@@ -61,7 +65,7 @@ export const verifiedTemplate = (data) => {
           text-decoration: none;
           display: inline-block;
         ">
-        View Progress
+        View Submission
       </a>
     </div>
   `;
