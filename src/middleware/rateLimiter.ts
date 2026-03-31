@@ -7,7 +7,7 @@ import { redisConnection } from "../config/redis.js";
 
 export const applyGlobalSecurity = (app: Express) => {
   // 1. Security Headers
-  app.use(helmet());
+  app.use((helmet as any)());
 
   // 2. Redis-Backed Global Rate Limiter
   const globalLimiter = rateLimit({
