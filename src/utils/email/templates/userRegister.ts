@@ -1,7 +1,7 @@
 import { mainLayout } from "../layouts/mainLayout.js";
 
 export const registeredTemplate = (data: {
-  name: string;
+  fullName: string;
   email: string;
   password: string;
   role: "STUDENT" | "SUPERVISOR";
