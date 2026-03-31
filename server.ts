@@ -10,7 +10,6 @@ import cors from "cors";
 import { applyGlobalSecurity } from "./src/middleware/rateLimiter.js";
 import "./src/listeners/email.listener.js";
 import "./src/workers/email.worker.js";
-import './src/services/mail.js'
 import { verifyTransporter } from "./src/services/mail.js";
 import { testDbConnection } from "./src/config/db.js";
 
@@ -47,20 +46,8 @@ app.get("/", (req, res) => {
   res.send("Institutional Research Repository Server Running");
 });
 
-const startServer = async () => {
-  try {
-    console.log("🚀 Starting server...");
-
-    await verifyTransporter();
-    await testDbConnection();
-
-    app.listen(port, () => {
-      console.log(`✅ Server running on http://localhost:${port}`);
-    });
-
-  } catch (err) {
-    console.error("❌ Fatal startup error:", err);
-  }
-};
-
-startServer();
+verifyTransporter();
+testDbConnection();
+app.listen(port, () => {
+  console.log(`Server is running on http://localhost:${port}`);
+});
