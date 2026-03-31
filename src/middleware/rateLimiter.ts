@@ -1,6 +1,6 @@
 import type { Express } from "express";
 import rateLimit from "express-rate-limit";
-import * as RedisStore from "rate-limit-redis"; // use .default for the constructor
+import RedisStore from "rate-limit-redis"; // use .default for the constructor
 import type { RedisReply } from "rate-limit-redis";
 import helmet from "helmet";
 import { redisConnection } from "../config/redis.js";
@@ -8,6 +8,12 @@ import { redisConnection } from "../config/redis.js";
 export const applyGlobalSecurity = (app: Express) => {
   // 1. Security Headers
   app.use((helmet as any)());
+  const store = new RedisStore({
+    sendCommand: (...args: [string, ...string[]]): Promise<RedisReply> => {
+      return redisConnection.call(...args) as Promise<RedisReply>;
+    },
+    prefix: "rl:",
+  });
 
   // 2. Redis-Backed Global Rate Limiter
   const globalLimiter = rateLimit({
@@ -15,13 +21,7 @@ export const applyGlobalSecurity = (app: Express) => {
     max: 200, // max requests per IP per window
     standardHeaders: true,
     legacyHeaders: false,
-    store: new RedisStore.default({
-      // rate-limit-redis expects a store with sendCommand
-      sendCommand: (...args: [string, ...string[]]): Promise<RedisReply> => {
-        return redisConnection.call(...args) as Promise<RedisReply>;
-      },
-      prefix: "rl:",
-    }),
+    store,
     message: {
       status: 429,
       success: false,
@@ -37,12 +37,7 @@ export const applyGlobalSecurity = (app: Express) => {
     windowMs: 60 * 60 * 1000, // 1 hour
     max: 10, // max failed attempts
     skipSuccessfulRequests: true, // only block failures
-    store: new RedisStore.default({
-      sendCommand: (...args: [string, ...string[]]): Promise<RedisReply> => {
-        return redisConnection.call(...args) as Promise<RedisReply>;
-      },
-      prefix: "rl-auth:",
-    }),
+    store,
     message: {
       status: 429,
       success: false,
