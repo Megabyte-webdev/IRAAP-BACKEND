@@ -1,6 +1,6 @@
 import nodemailer from "nodemailer";
 
-const transporter = nodemailer.createTransport({
+const transporter: any = nodemailer.createTransport({
   host: process.env.EMAIL_HOST,
   port: 587,
   secure: false, // true for 465, false for 587
@@ -8,10 +8,6 @@ const transporter = nodemailer.createTransport({
     user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_PASS,
   },
-  connectionTimeout: 10000, // optional: increase timeout
-  family: 4,
-  logger: true,
-  debug: true,
 });
 
 export const verifyTransporter = async () => {
