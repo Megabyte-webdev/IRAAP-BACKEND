@@ -6,9 +6,7 @@ import { registeredTemplate } from "./templates/userRegister.js";
 import { verifiedTemplate } from "./templates/verified.js";
 
 export const getEmailData = (type: string, payload: any) => {
-  const frontendUrl = process.env.FRONTEND_URL
-    ? process.env.FRONTEND_URL
-    : "https://iraap-app.vercel.app/";
+  const frontendUrl = "https://iraap-app.vercel.app/";
 
   switch (type) {
     case "TASK_ASSIGNED":
