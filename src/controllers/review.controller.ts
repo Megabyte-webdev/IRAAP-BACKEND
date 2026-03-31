@@ -2,6 +2,10 @@ import type { Request, Response } from "express";
 import { projects, reviews, reviewTasks } from "../database/schema.js";
 import { and, eq, inArray } from "drizzle-orm";
 import { db } from "../config/db.js";
+import { sendEmail } from "../services/mail.js";
+import { getEmailData } from "../utils/email/engine.js";
+import { eventBus } from "../events/index.js";
+import { Events } from "../utils/email/email.types.js";
 
 export const createReviewWithTasks = async (req: Request, res: Response) => {
   const { projectId, summary, tasks } = req.body;
@@ -49,8 +53,26 @@ export const createReviewWithTasks = async (req: Request, res: Response) => {
         .set({ status: "REVISION_REQUESTED" })
         .where(eq(projects.id, projectId));
 
-      return review;
+      const projectWithStudent: any = await tx.query.projects.findFirst({
+        where: eq(projects.id, projectId),
+        with: { student: true },
+      });
+      return { review, projectWithStudent };
     });
+
+    // FIRE-AND-FORGET EMAIL (Doesn't block the API response)
+    if (result.projectWithStudent?.student?.email) {
+      const payload = {
+        studentEmail: result.projectWithStudent.student.email,
+        studentName: result.projectWithStudent.student.fullName,
+        projectName: result.projectWithStudent.title,
+        supervisorName: (req as any).user.fullName,
+        summary,
+        taskCount: tasks.length,
+      };
+      eventBus.emit(Events.REVIEW_CREATED, payload);
+      console.log("emitting event", payload);
+    }
 
     res.status(201).json({
       message: "Review and tasks created successfully",
@@ -166,12 +188,30 @@ export const updateTaskByStudent = async (req: Request, res: Response) => {
       .where(eq(reviewTasks.id, Number(taskId)))
       .returning();
 
+    // Emit event for email to supervisor
+    const project: any = await db.query.projects.findFirst({
+      where: eq(projects.id, task.projectId),
+      with: { supervisor: true },
+    });
+
+    if (project?.supervisor?.email) {
+      const payload = {
+        supervisorEmail: project.supervisor.email,
+        supervisorName: project.supervisor.fullName,
+        studentName: (req as any).user.fullName,
+        projectName: project.title,
+        taskTitle: task.title,
+        taskStatus: updatedTask.status,
+      };
+      eventBus.emit(Events.TASK_SUBMITTED, payload);
+      console.log("emitting event", payload);
+    }
     res.status(200).json({
       message: "Task updated successfully",
       task: updatedTask,
     });
   } catch (error) {
-    console.error(error);
+    console.error("New Error", error);
     res.status(500).json({
       message: "Failed to update task",
       error,
@@ -218,6 +258,23 @@ export const verifyTaskBySupervisor = async (req: Request, res: Response) => {
 
       return updatedTask;
     });
+
+    // Emit email event for student
+    const projectWithStudent: any = await db.query.projects.findFirst({
+      where: eq(projects.id, task.projectId),
+      with: { student: true },
+    });
+
+    if (projectWithStudent?.student?.email) {
+      eventBus.emit(Events.TASK_VERIFIED, {
+        studentEmail: projectWithStudent.student.email,
+        studentName: projectWithStudent.student.fullName,
+        projectName: projectWithStudent.title,
+        taskTitle: task.title,
+        supervisorName: (req as any).user.fullName,
+        taskStatus: task.status,
+      });
+    }
 
     res.status(200).json({ message: "Task verified successfully", task });
   } catch (err) {

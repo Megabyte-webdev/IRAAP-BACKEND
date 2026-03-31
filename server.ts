@@ -8,6 +8,10 @@ import adminRoutes from "./src/routes/admin.routes.js";
 import supervisorRoutes from "./src/routes/supervisor.routes.js";
 import cors from "cors";
 import { applyGlobalSecurity } from "./src/middleware/rateLimiter.js";
+import "./src/listeners/email.listener.js";
+import "./src/workers/email.worker.js";
+import { verifyTransporter } from "./src/services/mail.js";
+
 dotenv.config();
 
 const app = express();
@@ -20,14 +24,14 @@ applyGlobalSecurity(app);
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-app.use(
-  cors({
-    origin: ["http://localhost:3000", "https://iraap-app.vercel.app"], // Your Next.js URL
-    credentials: true,
-    methods: ["GET", "POST", "PUT", "DELETE", "PATCH"],
-    allowedHeaders: ["Content-Type", "Authorization"],
-  }),
-);
+const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(",") || [];
+app.use(cors({ origin: allowedOrigins, credentials: true }));
+app.use((err, _req, res, _next) => {
+  console.error(err);
+  res
+    .status(err.status || 500)
+    .json({ message: err.message || "Internal Server Error" });
+});
 
 // Use routes
 app.use("/api/auth", authRoutes);
@@ -42,5 +46,6 @@ app.get("/", (req, res) => {
 });
 
 app.listen(port, () => {
+  verifyTransporter();
   console.log(`Server is running on http://localhost:${port}`);
 });

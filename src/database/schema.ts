@@ -1,3 +1,4 @@
+import { relations } from "drizzle-orm";
 import {
   pgTable,
   serial,
@@ -188,3 +189,42 @@ export const metadata = pgTable("metadata", {
 
   createdAt: timestamp("created_at").defaultNow(),
 });
+
+export const projectsRelations = relations(projects, ({ one, many }) => ({
+  student: one(users, {
+    fields: [projects.studentId],
+    references: [users.id],
+  }),
+  supervisor: one(users, {
+    fields: [projects.supervisorId],
+    references: [users.id],
+  }),
+  reviews: many(reviews),
+}));
+
+export const reviewsRelations = relations(reviews, ({ one, many }) => ({
+  project: one(projects, {
+    fields: [reviews.projectId],
+    references: [projects.id],
+  }),
+  reviewer: one(users, {
+    fields: [reviews.reviewerId],
+    references: [users.id],
+  }),
+  tasks: many(reviewTasks),
+}));
+
+export const reviewTasksRelations = relations(reviewTasks, ({ one }) => ({
+  review: one(reviews, {
+    fields: [reviewTasks.reviewId],
+    references: [reviews.id],
+  }),
+  project: one(projects, {
+    fields: [reviewTasks.projectId],
+    references: [projects.id],
+  }),
+  verifiedByUser: one(users, {
+    fields: [reviewTasks.verifiedBy],
+    references: [users.id],
+  }),
+}));

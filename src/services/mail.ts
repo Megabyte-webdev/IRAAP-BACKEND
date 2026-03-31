@@ -1,0 +1,37 @@
+import nodemailer from "nodemailer";
+
+const transporter = nodemailer.createTransport({
+  host: process.env.EMAIL_HOST, // e.g., smtp.resend.com or smtp.gmail.com
+  port: parseInt(process.env.EMAIL_PORT || "465"),
+  secure: false, // true for 465, false for other ports
+  auth: {
+    user: process.env.EMAIL_USER,
+    pass: process.env.EMAIL_PASS,
+  },
+  requireTLS: true,
+});
+
+export const verifyTransporter = async () => {
+  try {
+    await transporter.verify();
+    console.log("Mail server is ready to take our messages");
+  } catch (err) {
+    console.error(" Failed to verify transporter:", err);
+  }
+};
+
+export const sendEmail = async (to: string, subject: string, html: string) => {
+  try {
+    const info = await transporter.sendMail({
+      from: `"OOU IRAP Portal" <${process.env.EMAIL_USER}>`,
+      to,
+      subject,
+      html,
+    });
+    console.log("Message sent: %s", info.messageId);
+    return { success: true };
+  } catch (error) {
+    console.error("Email Error:", error);
+    return { success: false, error };
+  }
+};
