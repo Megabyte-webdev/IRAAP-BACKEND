@@ -1,9 +1,9 @@
 import { Resend } from "resend";
-const resend = new Resend("re_f1nXWkCT_DWngaeWEH6mvzu4CQ74B6Nkp");
+const resend = new Resend(process.env.RESEND_KEY);
 
 export const sendEmail = async (to: string, subject: string, html: string) => {
   try {
-    const info = await resend.emails.send({
+    await resend.emails.send({
       from: `"OOU IRAP Portal" <${process.env.EMAIL_USER}>`,
       to,
       subject,
