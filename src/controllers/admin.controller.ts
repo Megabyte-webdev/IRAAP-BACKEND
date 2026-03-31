@@ -134,7 +134,7 @@ export const bulkImportStudents = async (req: Request, res: Response) => {
       .onConflictDoNothing({ target: users.email });
 
     studentsToInsert.forEach((student) => {
-      const rawPassword = student.fullName?.toLowerCase()?.trim()?.split(" ");
+      const rawPassword = student.fullName?.toLowerCase()?.trim()?.split(" ")[0];
       eventBus.emit(Events.USER_REGISTERED, {
         fullName: student.fullName,
         email: student.email,
