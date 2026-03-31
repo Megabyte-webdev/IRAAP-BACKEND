@@ -11,6 +11,7 @@ import { applyGlobalSecurity } from "./src/middleware/rateLimiter.js";
 import "./src/listeners/email.listener.js";
 import "./src/workers/email.worker.js";
 import { testDbConnection } from "./src/config/db.js";
+import { sendEmail } from "./src/services/mail.js";
 
 dotenv.config();
 
@@ -47,5 +48,6 @@ app.get("/", (req, res) => {
 
 app.listen(port, () => {
   testDbConnection();
+  sendEmail("afolabimubarak18@gmail.com", "Testing", "<h1>New Test </h1>");
   console.log(`Server is running on http://localhost:${port}`);
 });
