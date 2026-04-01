@@ -13,20 +13,6 @@ const transporter: any = nodemailer.createTransport({
   debug: process.env.NODE_ENV !== "production",
 });
 
-export const verifyTransporter = async () => {
-  try {
-    await transporter.verify();
-     await sendEmail(
-       "irap.oou@gmail.com",
-     "Test Email",
-       "<p>Hello World</p>",
-    );
-    console.log("Mail server is ready to take our messages");
-  } catch (err) {
-    console.error(" Failed to verify transporter:", err);
-  }
-};
-
 export const sendEmail = async (to: string, subject: string, html: string) => {
   try {
     const info = await transporter.sendMail({
@@ -42,3 +28,19 @@ export const sendEmail = async (to: string, subject: string, html: string) => {
     return { success: false, error };
   }
 };
+
+export const verifyTransporter = async () => {
+  try {
+    await transporter.verify();
+     await sendEmail(
+       "irap.oou@gmail.com",
+     "Test Email",
+       "<p>Hello World</p>",
+    );
+    console.log("Mail server is ready to take our messages");
+  } catch (err) {
+    console.error(" Failed to verify transporter:", err);
+  }
+};
+
+verifyTransporter();
