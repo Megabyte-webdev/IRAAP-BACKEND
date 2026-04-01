@@ -8,6 +8,7 @@ new Worker(
   "send-email",
   async (job) => {
     const { type, payload, to } = job.data;
+    console.log('processing', payload)
 
     const emailInfo = getEmailData(type, payload);
 
