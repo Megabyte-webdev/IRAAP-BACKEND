@@ -11,6 +11,7 @@ const queueConfig = {
 };
 
 eventBus.on(Events.REVIEW_CREATED, async (data: any) => {
+  console.log('Listener received', data)
   await emailQueue.add(
     "send-email",
     {
