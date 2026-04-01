@@ -45,6 +45,7 @@ export const applyGlobalSecurity = (app: Express) => {
     windowMs: 60 * 60 * 1000, // 1 hour
     max: 10, // max failed attempts
     skipSuccessfulRequests: true, // only block failures
+    skip: (req) => req.method === "OPTIONS",
     store: authStore,
     message: {
       status: 429,
