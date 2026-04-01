@@ -30,6 +30,7 @@ eventBus.on(Events.REVIEW_CREATED, async (data: any) => {
 });
 
 eventBus.on(Events.TASK_SUBMITTED, async (data: any) => {
+  console.log('Listener received', data)
   await emailQueue.add(
     "send-email",
     {
@@ -46,6 +47,7 @@ eventBus.on(Events.TASK_SUBMITTED, async (data: any) => {
   );
 });
 eventBus.on(Events.TASK_SUBMITTED_CONFIRMATION, async (data: any) => {
+  console.log('Listener received', data)
   await emailQueue.add(
     "send-email",
     {
@@ -62,6 +64,7 @@ eventBus.on(Events.TASK_SUBMITTED_CONFIRMATION, async (data: any) => {
 });
 
 eventBus.on(Events.TASK_VERIFIED, async (data: any) => {
+  console.log('Listener received', data)
   await emailQueue.add(
     "send-email",
     {
@@ -78,6 +81,7 @@ eventBus.on(Events.TASK_VERIFIED, async (data: any) => {
 });
 
 eventBus.on(Events.TASK_ASSIGNED, async (data: any) => {
+  console.log('Listener received', data)
   await emailQueue.add(
     "send-email",
     {
@@ -94,6 +98,7 @@ eventBus.on(Events.TASK_ASSIGNED, async (data: any) => {
 });
 
 eventBus.on(Events.USER_REGISTERED, async (data: any) => {
+ console.log('Listener received', data)
   await emailQueue.add(
     "send-email",
     {
