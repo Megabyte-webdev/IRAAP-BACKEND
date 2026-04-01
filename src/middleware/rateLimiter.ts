@@ -5,15 +5,23 @@ import type { RedisReply } from "rate-limit-redis";
 import helmet from "helmet";
 import { redisConnection } from "../config/redis.js";
 
+const globalStore = new (RedisStore as any)({
+  sendCommand: (...args: [string, ...string[]]) => {
+    return redisConnection.call(...args);
+  },
+  prefix: "rl:global:",
+});
+
+const authStore = new (RedisStore as any)({
+  sendCommand: (...args: [string, ...string[]]) => {
+    return redisConnection.call(...args);
+  },
+  prefix: "rl:auth:",
+});
+
 export const applyGlobalSecurity = (app: Express) => {
   // 1. Security Headers
   app.use((helmet as any)());
-  const store = new (RedisStore as any)({
-    sendCommand: (...args: [string, ...string[]]): Promise<RedisReply> => {
-      return redisConnection.call(...args) as Promise<RedisReply>;
-    },
-    prefix: "rl:",
-  });
 
   // 2. Redis-Backed Global Rate Limiter
   const globalLimiter = rateLimit({
@@ -21,7 +29,7 @@ export const applyGlobalSecurity = (app: Express) => {
     max: 200, // max requests per IP per window
     standardHeaders: true,
     legacyHeaders: false,
-    store,
+    store:globalStore,
     message: {
       status: 429,
       success: false,
@@ -37,7 +45,7 @@ export const applyGlobalSecurity = (app: Express) => {
     windowMs: 60 * 60 * 1000, // 1 hour
     max: 10, // max failed attempts
     skipSuccessfulRequests: true, // only block failures
-    store,
+    store: authStore,
     message: {
       status: 429,
       success: false,
