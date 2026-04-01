@@ -8,6 +8,7 @@ const transporter: any = nodemailer.createTransport({
     user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_PASS,
   },
+  pool: true, 
   logger: process.env.NODE_ENV !== "production", // log only in dev
   debug: process.env.NODE_ENV !== "production",
 });
@@ -41,5 +42,3 @@ export const verifyTransporter = async () => {
     console.error(" Failed to verify transporter:", err);
   }
 };
-
-verifyTransporter();
