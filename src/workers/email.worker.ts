@@ -3,7 +3,6 @@ import Redis from "ioredis";
 import { getEmailData } from "../utils/email/engine.js";
 import { sendEmail } from "../services/mail.js";
 import { redisOptions } from "../config/redis.js";
-import Redis from "ioredis"; // Import Redis to create a fresh instance
 new Worker(
   "send-email",
   async (job) => {
