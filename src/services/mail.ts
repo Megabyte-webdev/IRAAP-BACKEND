@@ -20,7 +20,7 @@ const transporter: any = nodemailer.createTransport({
   connectionTimeout: 10000, // 10 seconds
   greetingTimeout: 10000,
   socketTimeout: 10000,
-});
+} as any);
 
 export const sendEmail = async (to: string, subject: string, html: string) => {
   try {
