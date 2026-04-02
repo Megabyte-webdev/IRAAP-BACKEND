@@ -1,10 +1,11 @@
 import Redis from "ioredis";
+const redisUrl = process.env.REDIS_URL;
 
-const redisUrl = process.env.REDIS_URL || "redis://iraap-redis:6379";
+if (!redisUrl) throw new Error("REDIS_URL is not defined");
 
 // Define the options once
 export const redisOptions = {
-  maxRetriesPerRequest: null, 
+  maxRetriesPerRequest: null,
   tls: redisUrl.startsWith("rediss://")
     ? { rejectUnauthorized: false }
     : undefined,
@@ -12,7 +13,7 @@ export const redisOptions = {
   enableReadyCheck: false,
   connectTimeout: 15000,
   // Upstash is sensitive to idle connections, keepalive helps
-  keepAlive: 30000, 
+  keepAlive: 30000,
 };
 
 // Create the connection using the standard constructor (remove .default)

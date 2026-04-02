@@ -11,7 +11,7 @@ import { applyGlobalSecurity } from "./src/middleware/rateLimiter.js";
 import "./src/listeners/email.listener.js";
 import "./src/workers/email.worker.js";
 import { testDbConnection } from "./src/config/db.js";
-import { sendEmail } from "./src/services/mail.js";
+import { sendEmail, verifyTransporter } from "./src/services/mail.js";
 
 dotenv.config();
 
@@ -50,6 +50,9 @@ app.get("/", (req, res) => {
 
 app.listen(Number(port), "0.0.0.0", () => {
   testDbConnection();
+  verifyTransporter();
   // Log the port specifically for Railway debugging
-  console.log(`Server is strictly running on port ${port} and accessible to Railway`);
+  console.log(
+    `Server is strictly running on port ${port} and accessible to Railway`,
+  );
 });
