@@ -1,23 +1,22 @@
 import type { Express } from "express";
 import { rateLimit } from "express-rate-limit";
-import RedisStore from "rate-limit-redis"; // use .default for the constructor
-import type { RedisReply } from "rate-limit-redis";
+//import RedisStore from "rate-limit-redis";
 import helmet from "helmet";
-import { redisConnection } from "../config/redis.js";
+// import { redisConnection } from "../config/redis.js";
 
-const globalStore = new (RedisStore as any)({
-  sendCommand: (...args: [string, ...string[]]) => {
-    return redisConnection.call(...args);
-  },
-  prefix: "rl:global:",
-});
+// const globalStore = new (RedisStore as any)({
+//   sendCommand: (...args: [string, ...string[]]) => {
+//     return redisConnection.call(...args);
+//   },
+//   prefix: "rl:global:",
+// });
 
-const authStore = new (RedisStore as any)({
-  sendCommand: (...args: [string, ...string[]]) => {
-    return redisConnection.call(...args);
-  },
-  prefix: "rl:auth:",
-});
+// const authStore = new (RedisStore as any)({
+//   sendCommand: (...args: [string, ...string[]]) => {
+//     return redisConnection.call(...args);
+//   },
+//   prefix: "rl:auth:",
+// });
 
 export const applyGlobalSecurity = (app: Express) => {
   // 1. Security Headers
@@ -29,7 +28,7 @@ export const applyGlobalSecurity = (app: Express) => {
     max: 200, // max requests per IP per window
     standardHeaders: true,
     legacyHeaders: false,
-    store:globalStore,
+    // store:globalStore,
     message: {
       status: 429,
       success: false,
@@ -46,7 +45,7 @@ export const applyGlobalSecurity = (app: Express) => {
     max: 10, // max failed attempts
     skipSuccessfulRequests: true, // only block failures
     skip: (req) => req.method === "OPTIONS",
-    store: authStore,
+    // store: authStore,
     message: {
       status: 429,
       success: false,
