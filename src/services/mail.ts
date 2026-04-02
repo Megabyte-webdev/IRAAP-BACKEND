@@ -2,15 +2,17 @@ import * as nodemailer from "nodemailer";
 
 const transporter: any = nodemailer.createTransport({
   host: process.env.EMAIL_HOST,
-  port: 465,
-  secure: true, // true for 465, false for 587
+  port: 587,
+  secure: false, // Use false for 587; use true for 465
   auth: {
     user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_PASS,
   },
-  pool: true, 
-  logger: process.env.NODE_ENV !== "production", // log only in dev
-  debug: process.env.NODE_ENV !== "production",
+  tls: {
+    // This helps with connection stability on cloud providers
+    ciphers: 'SSLv3',
+    rejectUnauthorized: true
+  }
 });
 
 export const sendEmail = async (to: string, subject: string, html: string) => {
