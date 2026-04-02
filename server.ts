@@ -9,9 +9,8 @@ import supervisorRoutes from "./src/routes/supervisor.routes.js";
 import cors from "cors";
 import { applyGlobalSecurity } from "./src/middleware/rateLimiter.js";
 import "./src/listeners/email.listener.js";
-import "./src/workers/email.worker.js";
 import { testDbConnection } from "./src/config/db.js";
-import { sendEmail, verifyTransporter } from "./src/services/mail.js";
+import { verifyTransporter } from "./src/services/mail.js";
 
 dotenv.config();
 
