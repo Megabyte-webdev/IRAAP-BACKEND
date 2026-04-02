@@ -2,8 +2,8 @@ import { Worker } from "bullmq";
 import Redis from "ioredis";
 import { getEmailData } from "../utils/email/engine.js";
 import { sendEmail } from "../services/mail.js";
-import { redisConnection } from "../config/redis.js";
-
+import { redisOptions } from "../config/redis.js";
+import Redis from "ioredis"; // Import Redis to create a fresh instance
 new Worker(
   "send-email",
   async (job) => {
@@ -16,5 +16,5 @@ new Worker(
 
     await sendEmail(to, emailInfo.subject, emailInfo.html);
   },
-  { connection: redisConnection },
+  { connection: new Redis.default(process.env.REDIS_URL, redisOptions) },
 );
