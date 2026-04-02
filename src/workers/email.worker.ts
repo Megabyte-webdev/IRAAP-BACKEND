@@ -15,5 +15,5 @@ new Worker(
 
     await sendEmail(to, emailInfo.subject, emailInfo.html);
   },
-  { connection: new Redis.default(process.env.REDIS_URL, redisOptions) },
+  { connection: new Redis(process.env.REDIS_URL, redisOptions) },
 );
