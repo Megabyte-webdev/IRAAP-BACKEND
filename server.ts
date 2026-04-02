@@ -48,7 +48,8 @@ app.get("/", (req, res) => {
   res.send("Institutional Research Repository Server Running");
 });
 
-app.listen(port, () => {
+app.listen(Number(port), "0.0.0.0", () => {
   testDbConnection();
-  console.log(`Server is running on http://localhost:${port}`);
+  // Log the port specifically for Railway debugging
+  console.log(`Server is strictly running on port ${port} and accessible to Railway`);
 });
