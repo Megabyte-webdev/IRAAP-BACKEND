@@ -1,5 +1,5 @@
 import { Resend } from "resend";
-const resend = new Resend("re_f1nXWkCT_DWngaeWEH6mvzu4CQ74B6Nkp");
+const resend = new Resend(process.env.RESEND_API_KEY!);
 
 // const transporter: any = nodemailer.createTransport({
 //   host: process.env.EMAIL_HOST,
