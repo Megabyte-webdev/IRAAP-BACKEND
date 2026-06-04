@@ -30,16 +30,24 @@ const resend = new Resend(process.env.RESEND_API_KEY!);
 
 export const sendEmail = async (to: string, subject: string, html: string) => {
   try {
-    const info = await resend.emails.send({
+    const response = await resend.emails.send({
       from: `"OOU IRAP Portal" <${process.env.EMAIL_USER}>`,
       to,
       subject,
       html,
     });
-    console.log("Message sent: %s", to);
-    return { success: true };
+
+    console.log("RESEND RESPONSE:", JSON.stringify(response, null, 2));
+
+    return {
+      success: true,
+      response,
+    };
   } catch (error) {
-    console.error("Email Error:", error);
-    return { success: false, error };
+    console.error("RESEND ERROR:", error);
+    return {
+      success: false,
+      error,
+    };
   }
 };
