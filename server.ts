@@ -35,12 +35,12 @@ app.use((err, _req, res, _next) => {
 });
 
 // Use routes
-app.use("/api/auth", authRoutes);
-app.use("/api/projects", projectRoutes);
-app.use("/api/search", searchRoutes);
-app.use("/api/reviews", reviewRoutes);
-app.use("/api/admin", adminRoutes);
-app.use("/api/supervisor", supervisorRoutes);
+app.use("/auth", authRoutes);
+app.use("/projects", projectRoutes);
+app.use("/search", searchRoutes);
+app.use("/reviews", reviewRoutes);
+app.use("/admin", adminRoutes);
+app.use("/supervisor", supervisorRoutes);
 
 app.get("/", (req, res) => {
   res.send("Institutional Research Repository Server Running");
