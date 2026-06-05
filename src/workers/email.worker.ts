@@ -6,6 +6,7 @@ import { sendEmail } from "../services/mail.js";
 new Worker(
   "send-email",
   async (job) => {
+    console.log("Processing email job:", job.data);
     try {
       const { type, payload, to, senderType } = job.data;
       const sender = senderType || "system";
