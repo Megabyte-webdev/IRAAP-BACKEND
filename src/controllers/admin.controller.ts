@@ -134,13 +134,20 @@ export const bulkImportStudents = async (req: Request, res: Response) => {
       .onConflictDoNothing({ target: users.email });
 
     studentsToInsert.forEach((student) => {
-      const rawPassword = student.fullName?.toLowerCase()?.trim()?.split(" ")[0];
-      eventBus.emit(Events.USER_REGISTERED, {
-        fullName: student.fullName,
-        email: student.email,
-        password: rawPassword,
-        role: "Student",
-      });
+      const rawPassword = student.fullName
+        ?.toLowerCase()
+        ?.trim()
+        ?.split(" ")[0];
+      eventBus.emit(
+        Events.USER_REGISTERED,
+        {
+          fullName: student.fullName,
+          email: student.email,
+          password: rawPassword,
+          role: "Student",
+        },
+        "onboarding",
+      );
     });
 
     res.status(201).json({
@@ -195,12 +202,16 @@ export const bulkImportSupervisors = async (req: Request, res: Response) => {
         ?.toLowerCase()
         ?.trim()
         ?.split(" ")[0];
-      eventBus.emit(Events.USER_REGISTERED, {
-        fullName: supervisor.fullName,
-        email: supervisor.email,
-        password: `${rawPassword}@irap`,
-        role: "Supervisor",
-      });
+      eventBus.emit(
+        Events.USER_REGISTERED,
+        {
+          fullName: supervisor.fullName,
+          email: supervisor.email,
+          password: `${rawPassword}@irap`,
+          role: "Supervisor",
+        },
+        "onboarding",
+      );
     });
 
     res.status(201).json({

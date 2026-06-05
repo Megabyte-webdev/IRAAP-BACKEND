@@ -1,26 +1,23 @@
 import { Worker } from "bullmq";
-import Redis from "ioredis";
+import { redisConnection } from "../config/redis.js";
 import { getEmailData } from "../utils/email/engine.js";
 import { sendEmail } from "../services/mail.js";
-import { redisOptions } from "../config/redis.js";
 
-const workerConnection = new Redis.default(process.env.REDIS_URL, redisOptions);
-
-// 2. Add an error listener so it doesn't fail silently
-workerConnection.on('error', (err) => {
-  console.error('Worker Redis Connection Error:', err.message);
-});
 new Worker(
   "send-email",
   async (job) => {
-    const { type, payload, to } = job.data;
-    console.log('processing', payload)
+    try {
+      const { type, payload, to, senderType } = job.data;
+      const sender = senderType || "system";
+      const emailInfo = getEmailData(type, payload);
 
-    const emailInfo = getEmailData(type, payload);
+      if (!emailInfo) return;
 
-    if (!emailInfo) return;
-
-    await sendEmail(to, emailInfo.subject, emailInfo.html);
+      await sendEmail(to, emailInfo.subject, emailInfo.html, sender);
+    } catch (err) {
+      console.error("Email job failed:", err);
+      throw err; // important so BullMQ can retry
+    }
   },
-  { connection: workerConnection},
+  { connection: redisConnection },
 );

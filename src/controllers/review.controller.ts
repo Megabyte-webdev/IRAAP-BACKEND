@@ -2,8 +2,6 @@ import type { Request, Response } from "express";
 import { projects, reviews, reviewTasks } from "../database/schema.js";
 import { and, eq, inArray } from "drizzle-orm";
 import { db } from "../config/db.js";
-import { sendEmail } from "../services/mail.js";
-import { getEmailData } from "../utils/email/engine.js";
 import { eventBus } from "../events/index.js";
 import { Events } from "../utils/email/email.types.js";
 

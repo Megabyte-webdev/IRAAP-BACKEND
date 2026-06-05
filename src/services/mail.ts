@@ -1,37 +1,17 @@
 import { Resend } from "resend";
+import { SENDERS, type SenderType } from "../utils/types/mailer.js";
+
 const resend = new Resend(process.env.RESEND_API_KEY!);
 
-// const transporter: any = nodemailer.createTransport({
-//   host: process.env.EMAIL_HOST,
-//   port: 587,
-//   secure: false, // true for 465, false for 587
-//   auth: {
-//     user: process.env.EMAIL_USER,
-//     pass: process.env.EMAIL_PASS,
-//   },
-//   pool: true,
-//   logger: process.env.NODE_ENV !== "production", // log only in dev
-//   debug: process.env.NODE_ENV !== "production",
-// });
-
-// export const verifyTransporter = async () => {
-//   try {
-//     await transporter.verify();
-//     await sendEmail(
-//       "afolabimubarak18@gmail.com",
-//       "Test Email",
-//       "<p>Hello World</p>",
-//     );
-//     console.log("Mail server is ready to take our messages");
-//   } catch (err) {
-//     console.error(" Failed to verify transporter:", err);
-//   }
-// };
-
-export const sendEmail = async (to: string, subject: string, html: string) => {
+export const sendEmail = async (
+  to: string,
+  subject: string,
+  html: string,
+  sender: SenderType = "onboarding",
+) => {
   try {
     const response = await resend.emails.send({
-      from: `"OOU IRAP Portal" <${process.env.EMAIL_USER}>`,
+      from: SENDERS[sender],
       to,
       subject,
       html,
@@ -39,15 +19,9 @@ export const sendEmail = async (to: string, subject: string, html: string) => {
 
     console.log("RESEND RESPONSE:", JSON.stringify(response, null, 2));
 
-    return {
-      success: true,
-      response,
-    };
+    return { success: true, response };
   } catch (error) {
     console.error("RESEND ERROR:", error);
-    return {
-      success: false,
-      error,
-    };
+    return { success: false, error };
   }
 };
