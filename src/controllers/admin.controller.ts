@@ -138,16 +138,13 @@ export const bulkImportStudents = async (req: Request, res: Response) => {
         ?.toLowerCase()
         ?.trim()
         ?.split(" ")[0];
-      eventBus.emit(
-        Events.USER_REGISTERED,
-        {
-          fullName: student.fullName,
-          email: student.email,
-          password: rawPassword,
-          role: "Student",
-        },
-        "onboarding",
-      );
+      eventBus.emit(Events.USER_REGISTERED, {
+        fullName: student.fullName,
+        email: student.email,
+        password: rawPassword,
+        role: "Student",
+        senderType: "onboarding",
+      });
     });
 
     res.status(201).json({
@@ -202,16 +199,13 @@ export const bulkImportSupervisors = async (req: Request, res: Response) => {
         ?.toLowerCase()
         ?.trim()
         ?.split(" ")[0];
-      eventBus.emit(
-        Events.USER_REGISTERED,
-        {
-          fullName: supervisor.fullName,
-          email: supervisor.email,
-          password: `${rawPassword}@irap`,
-          role: "Supervisor",
-        },
-        "onboarding",
-      );
+      eventBus.emit(Events.USER_REGISTERED, {
+        fullName: supervisor.fullName,
+        email: supervisor.email,
+        password: `${rawPassword}@irap`,
+        role: "Supervisor",
+        senderType: "onboarding",
+      });
     });
 
     res.status(201).json({
