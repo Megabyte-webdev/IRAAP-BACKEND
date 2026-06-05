@@ -7,11 +7,11 @@ export const sendEmail = async (
   to: string,
   subject: string,
   html: string,
-  sender: SenderType = "onboarding",
+  senderType: SenderType = "onboarding",
 ) => {
   try {
     const response = await resend.emails.send({
-      from: SENDERS[sender],
+      from: SENDERS[senderType],
       to,
       subject,
       html,
