@@ -17,8 +17,6 @@ export const sendEmail = async (
       html,
     });
 
-    console.log("RESEND RESPONSE:", JSON.stringify(response, null, 2));
-
     return { success: true, response };
   } catch (error) {
     console.error("RESEND ERROR:", error);

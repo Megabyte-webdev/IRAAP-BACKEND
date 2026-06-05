@@ -8,7 +8,7 @@ export const mainLayout = (content: any) => {
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>IRAP Notification</title>
 </head>
-<body style="margin: 0; padding: 0; background-color: #f1f5f9; font-family: 'Helvetica', Arial, sans-serif;">
+<body style="margin: 0; padding: 0; background-color: #f1f5f9; font-family: 'Helvetica', Arial, sans-serif; width: 100vw;">
 
   <!-- Outer Table -->
   <table width="100%" cellpadding="0" cellspacing="0" border="0">
@@ -16,12 +16,12 @@ export const mainLayout = (content: any) => {
       <td align="center" style="padding: 40px 10px;">
 
         <!-- Inner Card -->
-        <table width="600" cellpadding="0" cellspacing="0" border="0" style="background-color: #ffffff; border-radius: 12px; border: 1px solid #e2e8f0; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.08);">
+        <table cellpadding="0" cellspacing="0" border="0" style="background-color: #ffffff; border-radius: 12px; border: 1px solid #e2e8f0; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.08);">
 
           <!-- Header with Logo -->
           <tr>
             <td align="center" style="padding: 24px 0; background-color: #4f46e5;">
-              <img src="https://iraap-backend.vercel.app/irap-logo.png" alt="IRAP Logo" width="80" style="display: block; margin-bottom: 12px;">
+              <img src="https://iraap.com.ng/irap-logo.png" alt="IRAP Logo" width="80" style="display: block; margin-bottom: 12px;">
               <h1 style="color: #ffffff; font-size: 22px; margin: 0; letter-spacing: 1px; font-weight: 800;">IRAP Repository</h1>
             </td>
           </tr>
@@ -37,7 +37,7 @@ export const mainLayout = (content: any) => {
           <!--
           <tr>
             <td align="center" style="padding: 0 40px 40px 40px;">
-              <a href="https://irapplatform.com" target="_blank" style="background-color: #4f46e5; color: #ffffff; text-decoration: none; padding: 12px 24px; border-radius: 6px; font-weight: 600; display: inline-block;">Go to Portal</a>
+              <a href="https://www.iraap.com.ng" target="_blank" style="background-color: #4f46e5; color: #ffffff; text-decoration: none; padding: 12px 24px; border-radius: 6px; font-weight: 600; display: inline-block;">Go to Portal</a>
             </td>
           </tr>
           -->

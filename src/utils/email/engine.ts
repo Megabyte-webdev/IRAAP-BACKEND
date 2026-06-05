@@ -6,12 +6,12 @@ import { registeredTemplate } from "./templates/userRegister.js";
 import { verifiedTemplate } from "./templates/verified.js";
 
 export const getEmailData = (type: string, payload: any) => {
-  const frontendUrl = "https://iraap-app.vercel.app/";
+  const frontendUrl = "https://iraap.com.ng/";
 
   switch (type) {
     case "TASK_ASSIGNED":
       return {
-        subject: `[IRAP] New Task Assigned: ${payload.taskTitle}`,
+        subject: `[IRAAP] New Task Assigned: ${payload.taskTitle}`,
         html: assignedTemplate({ ...payload, dashboardUrl: frontendUrl }),
       };
 
@@ -23,7 +23,7 @@ export const getEmailData = (type: string, payload: any) => {
 
     case "TASK_SUBMITTED_CONFIRMATION":
       return {
-        subject: `[IRAP] Submission Received: ${payload.taskTitle}`,
+        subject: `[IRAAP] Submission Received: ${payload.taskTitle}`,
         html: taskSubmissionTemplate({
           ...payload,
           dashboardUrl: frontendUrl,
@@ -39,12 +39,12 @@ export const getEmailData = (type: string, payload: any) => {
     // Use this for "createReviewWithTasks" instead of "REJECTED"
     case "AMENDMENT_REQUIRED":
       return {
-        subject: `[IRAP] Feedback & Amendments: ${payload.projectName}`,
+        subject: `[IRAAP] Feedback & Amendments: ${payload.projectName}`,
         html: amendmentTemplate({ ...payload, dashboardUrl: frontendUrl }),
       };
     case "USER_REGISTERED":
       return {
-        subject: `[IRAP] Welcome ${payload.fullName}`,
+        subject: `[IRAAP] Welcome ${payload.fullName}`,
         html: registeredTemplate({
           ...payload,
           dashboardUrl: frontendUrl,
