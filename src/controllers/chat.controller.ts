@@ -70,41 +70,93 @@ export async function getConversations(req: Request, res: Response) {
   return res.json({ data: result });
 }
 
-// GET /chat/users
-// Returns all users the current user can start a conversation with.
-// STUDENT  → all supervisors
-// SUPERVISOR → all students (their assigned students first, then the rest)
-// Excludes the current user and marks which ones already have a conversation.
 export async function getChatableUsers(req: Request, res: Response) {
   const { id: userId, role } = req.user!;
 
-  // Fetch existing conversation partner IDs so we can mark them
+  // Existing conversations
   const existingConvos = await db.query.conversations.findMany({
     where: or(
       eq(conversations.supervisorId, userId),
       eq(conversations.studentId, userId),
     ),
-    columns: { id: true, supervisorId: true, studentId: true },
+    columns: {
+      id: true,
+      supervisorId: true,
+      studentId: true,
+    },
   });
 
-  // Map partnerId → conversationId for quick lookup
   const convoByPartner = new Map<number, number>();
+
   for (const c of existingConvos) {
     const partnerId = c.supervisorId === userId ? c.studentId : c.supervisorId;
+
     convoByPartner.set(partnerId, c.id);
   }
 
-  const targetRole = role === "STUDENT" ? "SUPERVISOR" : "STUDENT";
+  let chatableUsers: any[] = [];
 
-  const chatableUsers = await db.query.users.findMany({
-    where: and(eq(users.role, targetRole), ne(users.id, userId)),
-    columns: { id: true, fullName: true, email: true, role: true },
-    orderBy: [users.fullName],
-  });
+  if (role === "STUDENT") {
+    const me = await db.query.users.findFirst({
+      where: eq(users.id, userId),
+      columns: {
+        supervisorId: true,
+      },
+    });
+
+    if (!me?.supervisorId) {
+      return res.json({ data: [] });
+    }
+
+    chatableUsers = await db.query.users.findMany({
+      where: and(
+        ne(users.id, userId),
+        or(
+          // my supervisor
+          eq(users.id, me.supervisorId),
+
+          // students under same supervisor
+          and(
+            eq(users.role, "STUDENT"),
+            eq(users.supervisorId, me.supervisorId),
+          ),
+        ),
+      ),
+      columns: {
+        id: true,
+        fullName: true,
+        email: true,
+        role: true,
+      },
+      orderBy: [users.fullName],
+    });
+  }
+
+  if (role === "SUPERVISOR") {
+    chatableUsers = await db.query.users.findMany({
+      where: and(
+        ne(users.id, userId),
+        or(
+          // my students
+          eq(users.supervisorId, userId),
+
+          // other supervisors
+          eq(users.role, "SUPERVISOR"),
+        ),
+      ),
+      columns: {
+        id: true,
+        fullName: true,
+        email: true,
+        role: true,
+      },
+      orderBy: [users.fullName],
+    });
+  }
 
   const result = chatableUsers.map((u) => ({
     ...u,
-    conversationId: convoByPartner.get(u.id) ?? null, // null = no chat yet
+    conversationId: convoByPartner.get(u.id) ?? null,
   }));
 
   return res.json({ data: result });
