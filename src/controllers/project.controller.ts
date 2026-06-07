@@ -24,7 +24,7 @@ const projectSchema = z.object({
 });
 
 export const submitProject = async (req: Request, res: Response) => {
-  const studentId = (req as any).user?.userId;
+  const studentId = (req as any).user?.id;
   const supervisorId = (req as any).user?.supervisorId;
   const file = req.file;
 
@@ -64,6 +64,7 @@ export const submitProject = async (req: Request, res: Response) => {
           studentId,
           categoryId: parsed.categoryId,
           status: "PENDING",
+          updatedAt: new Date(),
         })
         .returning();
 
@@ -100,7 +101,7 @@ export const submitProject = async (req: Request, res: Response) => {
 
 export const updateProject = async (req: Request, res: Response) => {
   const projectId = Number(req.params.id);
-  const studentId = (req as any).user?.userId;
+  const studentId = (req as any).user?.id;
   const supervisorId = (req as any).user?.supervisorId;
   const file = req.file;
 
@@ -129,6 +130,7 @@ export const updateProject = async (req: Request, res: Response) => {
         submissionYear: parsed.submissionYear,
         categoryId: parsed.categoryId,
         supervisorId,
+        updatedAt: new Date(),
       };
       if (uploadResult) {
         updateData.fileUrl = uploadResult.url;
@@ -193,7 +195,7 @@ export const getPendingProjects = async (req: Request, res: Response) => {
 
 // -------------------- GET STUDENT SUBMISSIONS --------------------
 export const getStudentSubmissions = async (req: Request, res: Response) => {
-  const studentId = Number((req as any)?.user?.userId);
+  const studentId = Number((req as any)?.user?.id);
   try {
     const submissions = await db.query.projects.findMany({
       where: eq(projects.studentId, studentId),

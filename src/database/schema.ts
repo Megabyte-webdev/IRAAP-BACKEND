@@ -25,6 +25,12 @@ export const reviewTaskStatusEnum = pgEnum("review_task_status", [
   "VERIFIED",
 ]);
 
+export const messageStatusEnum = pgEnum("message_status", [
+  "SENT",
+  "DELIVERED",
+  "READ",
+]);
+
 export const users = pgTable(
   "users",
   {
@@ -153,6 +159,7 @@ export const reviewTasks = pgTable(
       table.reviewId,
       table.title,
     ),
+    updatedAtIndex: index("review_tasks_updated_at_idx").on(table.updatedAt),
   }),
 );
 
@@ -226,5 +233,87 @@ export const reviewTasksRelations = relations(reviewTasks, ({ one }) => ({
   verifiedByUser: one(users, {
     fields: [reviewTasks.verifiedBy],
     references: [users.id],
+  }),
+}));
+
+export const conversations = pgTable(
+  "conversations",
+  {
+    id: serial("id").primaryKey(),
+
+    supervisorId: integer("supervisor_id")
+      .references(() => users.id)
+      .notNull(),
+
+    studentId: integer("student_id")
+      .references(() => users.id)
+      .notNull(),
+
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+    lastMessageId: integer("last_message_id"),
+  },
+  (table) => ({
+    uniquePair: unique("unique_supervisor_student").on(
+      table.supervisorId,
+      table.studentId,
+    ),
+  }),
+);
+
+export const messages = pgTable(
+  "messages",
+  {
+    id: serial("id").primaryKey(),
+    conversationId: integer("conversation_id")
+      .references(() => conversations.id, { onDelete: "cascade" })
+      .notNull(),
+    senderId: integer("sender_id")
+      .references(() => users.id)
+      .notNull(),
+    content: text("content").notNull(),
+    replyToMessageId: integer("reply_to_message_id").references(
+      () => messages.id,
+    ),
+    readAt: timestamp("read_at"),
+    createdAt: timestamp("created_at").defaultNow(),
+    status: messageStatusEnum("status").default("SENT").notNull(),
+  },
+  (table) => ({
+    convoIndex: index("messages_convo_idx").on(table.conversationId),
+    createdAtIndex: index("messages_convo_created_idx").on(
+      table.conversationId,
+      table.createdAt,
+    ),
+  }),
+);
+
+export const conversationsRelations = relations(
+  conversations,
+  ({ one, many }) => ({
+    supervisor: one(users, {
+      fields: [conversations.supervisorId],
+      references: [users.id],
+    }),
+    student: one(users, {
+      fields: [conversations.studentId],
+      references: [users.id],
+    }),
+    messages: many(messages),
+  }),
+);
+
+export const messagesRelations = relations(messages, ({ one }) => ({
+  conversation: one(conversations, {
+    fields: [messages.conversationId],
+    references: [conversations.id],
+  }),
+  sender: one(users, {
+    fields: [messages.senderId],
+    references: [users.id],
+  }),
+  replyTo: one(messages, {
+    fields: [messages.replyToMessageId],
+    references: [messages.id],
   }),
 }));

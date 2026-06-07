@@ -7,7 +7,7 @@ import { Events } from "../utils/email/email.types.js";
 
 export const createReviewWithTasks = async (req: Request, res: Response) => {
   const { projectId, summary, tasks } = req.body;
-  const supervisorId = Number((req as any).user.userId);
+  const supervisorId = Number((req as any).user.id);
 
   try {
     const result = await db.transaction(async (tx) => {
@@ -226,7 +226,7 @@ export const updateTaskByStudent = async (req: Request, res: Response) => {
 
 export const verifyTaskBySupervisor = async (req: Request, res: Response) => {
   const { taskId } = req.params;
-  const supervisorId = Number((req as any).user.userId);
+  const supervisorId = Number((req as any).user.id);
 
   try {
     const task = await db.transaction(async (tx) => {

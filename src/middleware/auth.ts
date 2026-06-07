@@ -44,7 +44,7 @@ export const authorize = (roles: string[]) => {
     }
 
     // Ensure ID exists
-    if (!user.userId) {
+    if (!user.id) {
       return res.status(400).json({
         message: "Invalid user payload: Missing user ID",
       });

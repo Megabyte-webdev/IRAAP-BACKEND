@@ -9,7 +9,7 @@ import {
 import { and, eq, not, sql } from "drizzle-orm";
 
 export const getSupervisorStats = async (req: Request, res: Response) => {
-  const supervisorId = Number((req as any).user.userId);
+  const supervisorId = Number((req as any).user.id);
   try {
     const totalProjects = await db
       .select({ count: sql<number>`count(*)` })
@@ -46,7 +46,7 @@ export const getSupervisorStats = async (req: Request, res: Response) => {
 };
 
 export const getSupervisorProjects = async (req: Request, res: Response) => {
-  const supervisorId = Number((req as any).user.userId);
+  const supervisorId = Number((req as any).user.id);
   try {
     const allProjects = await db
       .select({
@@ -76,7 +76,7 @@ export const getSupervisorProjects = async (req: Request, res: Response) => {
 };
 
 export const updateProjectStatus = async (req: Request, res: Response) => {
-  const supervisorId = Number((req as any).user.userId);
+  const supervisorId = Number((req as any).user.id);
   const projectId = Number(req.params.id);
   const { status } = req.body as {
     status: "APPROVED" | "REJECTED" | "REVISION_REQUESTED";

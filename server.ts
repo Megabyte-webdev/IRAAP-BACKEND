@@ -6,12 +6,14 @@ import searchRoutes from "./src/routes/search.routes.js";
 import reviewRoutes from "./src/routes/review.routes.js";
 import adminRoutes from "./src/routes/admin.routes.js";
 import supervisorRoutes from "./src/routes/supervisor.routes.js";
+import chatRoutes from "./src/routes/chat.routes.js";
 import cors from "cors";
 import { applyGlobalSecurity } from "./src/middleware/rateLimiter.js";
 import "./src/listeners/email.listener.js";
 import "./src/workers/email.worker.js";
 import { testDbConnection } from "./src/config/db.js";
-
+import http from "http";
+import { initWebSocket } from "./src/services/ws.js";
 dotenv.config();
 
 const app = express();
@@ -42,12 +44,16 @@ app.use("/search", searchRoutes);
 app.use("/reviews", reviewRoutes);
 app.use("/admin", adminRoutes);
 app.use("/supervisor", supervisorRoutes);
+app.use("/chat", chatRoutes);
 
 app.get("/", (req, res) => {
   res.send("Institutional Research Repository Server Running");
 });
 
-app.listen(Number(port), "0.0.0.0", () => {
+const server = http.createServer(app);
+initWebSocket(server);
+
+server.listen(Number(port), "0.0.0.0", () => {
   testDbConnection();
 
   // Log the port specifically for Railway debugging
