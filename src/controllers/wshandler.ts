@@ -109,6 +109,7 @@ async function handleChatSend(
   );
 
   const recipientSocket = clients.get(msg.recipientId);
+  const recipientRole = recipientSocket?.userRole;
 
   if (recipientSocket) {
     recipientSocket.send(
@@ -118,15 +119,15 @@ async function handleChatSend(
       }),
     );
 
-    const recipientRole = clients.get(msg.recipientId);
     await sendPushNotification({
       senderId: payload.senderId,
       receiverId: msg.recipientId,
       senderName: ws.fullName,
       message: msg.content,
       avatar: null,
-      role: recipientRole,
+      role: recipientRole?.toLocaleLowerCase(),
     });
+
     await db
       .update(messages)
       .set({ status: "DELIVERED" })

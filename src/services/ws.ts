@@ -28,6 +28,7 @@ export function initWebSocket(server: any) {
 
       const decoded = jwt.verify(token, process.env.JWT_SECRET!) as {
         id: number;
+        role: string;
       };
 
       const user = await db.query.users.findFirst({

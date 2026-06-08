@@ -50,6 +50,7 @@ app.use("/supervisor", supervisorRoutes);
 app.use("/chat", chatRoutes);
 app.post("/push/subscribe", (req, res) => {
   const { userId, subscription } = req.body;
+  console.log("SUBSCRIBE HIT", userId, subscription);
 
   if (!userId || !subscription) {
     return res.status(400).json({ error: "Missing data" });

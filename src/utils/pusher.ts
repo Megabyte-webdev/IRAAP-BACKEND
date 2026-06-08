@@ -1,6 +1,5 @@
 import webpush from "../config/webpush.js";
 import { getSubscription } from "./pushStore.js";
-
 export async function sendPushNotification({
   receiverId,
   senderId,
@@ -23,6 +22,7 @@ export async function sendPushNotification({
 
   try {
     await webpush.sendNotification(subscription, payload);
+    console.log("PUSH SENT", payload);
   } catch (err) {
     console.error("Push failed:", err);
   }

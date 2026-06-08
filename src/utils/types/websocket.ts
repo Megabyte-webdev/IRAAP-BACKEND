@@ -10,7 +10,7 @@ export type ChatSendMessage = {
 
 export type ChatReadMessage = {
   type: "chat:read";
-  messageId: number;
+  messageId: number[];
   senderId: number; // who sent the message — avoids a DB lookup server-side
 };
 
