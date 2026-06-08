@@ -41,6 +41,7 @@ export function initWebSocket(server: any) {
 
       ws.userId = user.id;
       ws.userRole = user.role;
+      ws.fullName = user.fullName;
 
       // Close stale socket — but mark it so its close handler
       // does NOT broadcast offline (we're immediately replacing it)

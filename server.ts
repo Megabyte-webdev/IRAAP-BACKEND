@@ -14,6 +14,8 @@ import "./src/workers/email.worker.js";
 import { testDbConnection } from "./src/config/db.js";
 import http from "http";
 import { initWebSocket } from "./src/services/ws.js";
+import { saveSubscription } from "./src/utils/pushStore.js";
+import bodyParser from "body-parser";
 dotenv.config();
 
 const app = express();
@@ -29,6 +31,7 @@ applyGlobalSecurity(app);
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+app.use(bodyParser.json());
 
 app.use((err, _req, res, _next) => {
   console.error(err);
@@ -45,6 +48,19 @@ app.use("/reviews", reviewRoutes);
 app.use("/admin", adminRoutes);
 app.use("/supervisor", supervisorRoutes);
 app.use("/chat", chatRoutes);
+app.post("/push/subscribe", (req, res) => {
+  const { userId, subscription } = req.body;
+
+  if (!userId || !subscription) {
+    return res.status(400).json({ error: "Missing data" });
+  }
+
+  saveSubscription(userId, subscription);
+
+  console.log("Push subscribed:", userId);
+
+  res.json({ success: true });
+});
 
 app.get("/", (req, res) => {
   res.send("Institutional Research Repository Server Running");

@@ -5,6 +5,7 @@ import { conversations, messages, users } from "../database/schema.js";
 import { clients } from "../services/ws.js";
 import { db } from "../config/db.js";
 import { buildMessageDTO } from "../utils/helper.js";
+import { sendPushNotification } from "../utils/pusher.js";
 
 export async function handleMessage(ws: AuthedWebSocket, raw: string) {
   try {
@@ -17,11 +18,9 @@ export async function handleMessage(ws: AuthedWebSocket, raw: string) {
       case "chat:read":
         return handleRead(ws, msg);
 
-      // NEW: bulk-read all messages in a conversation (WhatsApp "open chat" behaviour)
       case "chat:read:bulk":
         return handleReadBulk(ws, msg);
 
-      // NEW: client signals it is typing
       case "chat:typing":
         return handleTyping(ws, msg);
     }
@@ -119,6 +118,15 @@ async function handleChatSend(
       }),
     );
 
+    const recipientRole = clients.get(msg.recipientId);
+    await sendPushNotification({
+      senderId: payload.senderId,
+      receiverId: msg.recipientId,
+      senderName: ws.fullName,
+      message: msg.content,
+      avatar: null,
+      role: recipientRole,
+    });
     await db
       .update(messages)
       .set({ status: "DELIVERED" })
