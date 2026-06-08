@@ -55,7 +55,7 @@ export const submitProject = async (req: Request, res: Response) => {
     uploadResult = await uploadToCloudinary(file.buffer);
 
     const result = await db.transaction(async (tx) => {
-      const [project] = await tx
+      const [project] = await (tx
         .insert(projects)
         .values({
           title: parsed.title,
@@ -70,9 +70,9 @@ export const submitProject = async (req: Request, res: Response) => {
           totalVersions: 1,
           updatedAt: new Date(),
         })
-        .returning();
+        .returning() as Promise<any[]>);
 
-      const [version] = await tx
+      const [version] = await (tx
         .insert(projectVersions)
         .values({
           projectId: project.id,
@@ -84,7 +84,7 @@ export const submitProject = async (req: Request, res: Response) => {
           trigger: "INITIAL_SUBMISSION",
           fileSizeBytes: file.size,
         })
-        .returning();
+        .returning() as Promise<any[]>);
 
       // Point project at version 1
       await tx
@@ -169,7 +169,7 @@ export const updateProject = async (req: Request, res: Response) => {
 
         const nextVersion = (lastVersion[0]?.versionNumber ?? 0) + 1;
 
-        const [version] = await tx
+        const [version] = await (tx
           .insert(projectVersions)
           .values({
             projectId,
@@ -181,13 +181,13 @@ export const updateProject = async (req: Request, res: Response) => {
             trigger: "STUDENT_UPDATE",
             fileSizeBytes: file.size,
           })
-          .returning();
+          .returning() as Promise<any[]>);
 
         newVersionId = version.id;
         newTotalVersions = nextVersion;
       }
 
-      const [updatedProject] = await tx
+      const [updatedProject] = await (tx
         .update(projects)
         .set({
           title: parsed.title,
@@ -205,7 +205,7 @@ export const updateProject = async (req: Request, res: Response) => {
           updatedAt: new Date(),
         })
         .where(eq(projects.id, projectId))
-        .returning();
+        .returning() as Promise<any[]>);
 
       await tx
         .update(metadata)

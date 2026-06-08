@@ -95,11 +95,7 @@ export const createReviewWithTasks = async (req: Request, res: Response) => {
       .json({ message: "Failed to create review", error: message });
   }
 };
-
-// ─────────────────────────────────────────────
 // GET REVIEWS WITH TASKS FOR A PROJECT
-// ─────────────────────────────────────────────
-
 export const getProjectReviewsWithTasks = async (
   req: Request,
   res: Response,
@@ -170,11 +166,7 @@ export const getProjectReviewsWithTasks = async (
     return res.status(500).json({ message: "Failed to fetch project reviews" });
   }
 };
-
-// ─────────────────────────────────────────────
 // UPDATE TASK BY STUDENT  (optional evidence file)
-// ─────────────────────────────────────────────
-
 export const updateTaskByStudent = async (req: Request, res: Response) => {
   const { taskId } = req.params;
   const { status, studentNote } = req.body;
@@ -269,11 +261,7 @@ export const updateTaskByStudent = async (req: Request, res: Response) => {
       .json({ message: "Failed to update task", error: error.message });
   }
 };
-
-// ─────────────────────────────────────────────
 // SUBMIT REVISION FILE  (student — after completing all tasks)
-// ─────────────────────────────────────────────
-
 export const submitRevisionForReview = async (req: Request, res: Response) => {
   const studentId = Number((req as any).user?.id);
   const reviewId = Number(req.params.reviewId);
@@ -344,7 +332,7 @@ export const submitRevisionForReview = async (req: Request, res: Response) => {
       const nextVersionNumber = (lastVersion[0]?.versionNumber ?? 0) + 1;
 
       // 7. Insert new version — REVISION_SUBMISSION trigger
-      const [version] = await tx
+      const inserted = await tx
         .insert(projectVersions)
         .values({
           projectId: project.id,
@@ -359,6 +347,8 @@ export const submitRevisionForReview = async (req: Request, res: Response) => {
           fileSizeBytes: file.size,
         })
         .returning();
+
+      const version = Array.isArray(inserted) ? inserted[0] : (inserted as any);
 
       // 8. Link version to the review record
       await tx
@@ -414,11 +404,7 @@ export const submitRevisionForReview = async (req: Request, res: Response) => {
     });
   }
 };
-
-// ─────────────────────────────────────────────
 // VERIFY TASK BY SUPERVISOR
-// ─────────────────────────────────────────────
-
 export const verifyTaskBySupervisor = async (req: Request, res: Response) => {
   const { taskId } = req.params;
   const supervisorId = Number((req as any).user.id);
@@ -444,18 +430,22 @@ export const verifyTaskBySupervisor = async (req: Request, res: Response) => {
         .returning();
 
       // Check if all tasks for this project are now verified
-      const allTasks = await tx.query.reviewTasks.findMany({
-        where: eq(reviewTasks.projectId, t.projectId),
+      const reviewTasksForReview = await tx.query.reviewTasks.findMany({
+        where: eq(reviewTasks.reviewId, t.reviewId),
       });
-      const allVerified = allTasks.every((task) => task.status === "VERIFIED");
 
-      await tx
-        .update(projects)
-        .set({
-          status: allVerified ? "APPROVED" : "REVISION_REQUESTED",
-          updatedAt: new Date(),
-        })
-        .where(eq(projects.id, t.projectId));
+      const allVerified = reviewTasksForReview.every(
+        (task) => task.status === "VERIFIED",
+      );
+      if (allVerified) {
+        await tx
+          .update(projects)
+          .set({
+            status: "APPROVED",
+            updatedAt: new Date(),
+          })
+          .where(eq(projects.id, t.projectId));
+      }
 
       return updatedTask;
     });
@@ -488,11 +478,7 @@ export const verifyTaskBySupervisor = async (req: Request, res: Response) => {
       .json({ message: "Failed to verify task", error: message });
   }
 };
-
-// ─────────────────────────────────────────────
 // UPDATE PROJECT STATUS  (supervisor — requires all tasks VERIFIED)
-// ─────────────────────────────────────────────
-
 export const updateProjectStatus = async (req: Request, res: Response) => {
   const supervisorId = Number((req as any).user.id);
   const projectId = Number(req.params.id);
@@ -551,11 +537,7 @@ export const updateProjectStatus = async (req: Request, res: Response) => {
       .json({ message: "Failed to update project status", error });
   }
 };
-
-// ─────────────────────────────────────────────
 // DELETE TASK
-// ─────────────────────────────────────────────
-
 export const deleteTask = async (req: Request, res: Response) => {
   const { taskId } = req.params;
 
@@ -578,11 +560,7 @@ export const deleteTask = async (req: Request, res: Response) => {
     return res.status(500).json({ message: "Internal server error" });
   }
 };
-
-// ─────────────────────────────────────────────
 // DELETE REVIEW
-// ─────────────────────────────────────────────
-
 export const deleteReview = async (req: Request, res: Response) => {
   const { reviewId } = req.params;
 

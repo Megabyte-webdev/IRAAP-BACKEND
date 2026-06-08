@@ -4,6 +4,7 @@ import {
   deleteReview,
   deleteTask,
   getProjectReviewsWithTasks,
+  submitRevisionForReview,
   updateTaskByStudent,
   verifyTaskBySupervisor,
 } from "../controllers/review.controller.js";
@@ -23,6 +24,13 @@ router.post(
   authenticate,
   authorize(["SUPERVISOR"]),
   createReviewWithTasks,
+);
+
+router.post(
+  "/:reviewId/submit",
+  authenticate,
+  authorize(["STUDENT"]),
+  submitRevisionForReview,
 );
 
 router.patch(
