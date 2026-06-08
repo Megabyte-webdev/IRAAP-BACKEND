@@ -9,6 +9,7 @@ import {
   verifyTaskBySupervisor,
 } from "../controllers/review.controller.js";
 import { authenticate, authorize } from "../middleware/auth.js";
+import { upload } from "../middleware/upload.js";
 
 const router: Router = Router();
 
@@ -30,6 +31,7 @@ router.post(
   "/:reviewId/submit",
   authenticate,
   authorize(["STUDENT"]),
+  upload.single("file"),
   submitRevisionForReview,
 );
 

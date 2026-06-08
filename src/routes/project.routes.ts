@@ -1,6 +1,7 @@
 import { Router } from "express";
 import {
   getProjectDetails,
+  getProjectVersionHistory,
   getStudentSubmissions,
   submitProject,
   updateProject,
@@ -32,6 +33,13 @@ router.get(
   authenticate,
   authorize(["STUDENT"]),
   getStudentSubmissions,
+);
+
+router.get(
+  "/:id/history",
+  authenticate,
+  authorize(["STUDENT"]),
+  getProjectVersionHistory,
 );
 
 router.get("/:id", getProjectDetails);

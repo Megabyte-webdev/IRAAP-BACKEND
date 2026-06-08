@@ -266,7 +266,7 @@ export const submitRevisionForReview = async (req: Request, res: Response) => {
   const studentId = Number((req as any).user?.id);
   const reviewId = Number(req.params.reviewId);
   const file = req.file;
-  const { changeNote } = req.body;
+  const changeNote = req.body?.changeNote;
 
   if (!file) {
     return res.status(400).json({ message: "Revised PDF file is required" });
