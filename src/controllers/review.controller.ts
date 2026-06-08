@@ -1,13 +1,26 @@
 import type { Request, Response } from "express";
-import { projects, reviews, reviewTasks } from "../database/schema.js";
-import { and, eq, inArray } from "drizzle-orm";
+import {
+  projects,
+  reviews,
+  reviewTasks,
+  projectVersions,
+} from "../database/schema.js";
+import { and, desc, eq, inArray, not } from "drizzle-orm";
 import { db } from "../config/db.js";
 import { eventBus } from "../events/index.js";
 import { Events } from "../utils/email/email.types.js";
+import { uploadToCloudinary } from "../utils/fileUpload.js";
+import cloudinary from "../config/cloudinary.js";
 
 export const createReviewWithTasks = async (req: Request, res: Response) => {
   const { projectId, summary, tasks } = req.body;
   const supervisorId = Number((req as any).user.id);
+
+  if (!projectId || !summary) {
+    return res
+      .status(400)
+      .json({ message: "projectId and summary are required" });
+  }
 
   try {
     const result = await db.transaction(async (tx) => {
@@ -19,17 +32,16 @@ export const createReviewWithTasks = async (req: Request, res: Response) => {
         ),
       });
 
-      if (!project) {
-        throw new Error("Project not found or access denied");
-      }
+      if (!project) throw new Error("Project not found or access denied");
 
-      // 2. Create review
+      // 2. Create review record
       const [review] = await tx
         .insert(reviews)
         .values({
           projectId,
           reviewerId: supervisorId,
           summary,
+          revisionSubmitted: false,
         })
         .returning();
 
@@ -39,55 +51,54 @@ export const createReviewWithTasks = async (req: Request, res: Response) => {
           reviewId: review.id,
           projectId,
           title: t.title,
-          description: t.description,
+          description: t.description ?? null,
         }));
-
         await tx.insert(reviewTasks).values(formattedTasks);
       }
 
-      // 4. Set project to revision requested
+      // 4. Mark project as revision requested
       await tx
         .update(projects)
-        .set({ status: "REVISION_REQUESTED" })
+        .set({ status: "REVISION_REQUESTED", updatedAt: new Date() })
         .where(eq(projects.id, projectId));
 
+      // 5. Fetch project + student for email
       const projectWithStudent: any = await tx.query.projects.findFirst({
         where: eq(projects.id, projectId),
         with: { student: true },
       });
+
       return { review, projectWithStudent };
     });
 
-    // FIRE-AND-FORGET EMAIL (Doesn't block the API response)
+    // Fire-and-forget email
     if (result.projectWithStudent?.student?.email) {
-      const payload = {
+      eventBus.emit(Events.REVIEW_CREATED, {
         studentEmail: result.projectWithStudent.student.email,
         studentName: result.projectWithStudent.student.fullName,
         projectName: result.projectWithStudent.title,
         supervisorName: (req as any).user.fullName,
         summary,
-        taskCount: tasks.length,
-      };
-      eventBus.emit(Events.REVIEW_CREATED, payload);
-      console.log("emitting event", payload);
+        taskCount: tasks?.length ?? 0,
+      });
     }
 
-    res.status(201).json({
+    return res.status(201).json({
       message: "Review and tasks created successfully",
-      review: result,
+      review: result.review,
     });
   } catch (error) {
     console.error(error);
-
-    // Ensure error is an instance of Error
     const message = error instanceof Error ? error.message : "Unknown error";
-
-    res.status(500).json({
-      message: "Failed to create review",
-      error: message,
-    });
+    return res
+      .status(500)
+      .json({ message: "Failed to create review", error: message });
   }
 };
+
+// ─────────────────────────────────────────────
+// GET REVIEWS WITH TASKS FOR A PROJECT
+// ─────────────────────────────────────────────
 
 export const getProjectReviewsWithTasks = async (
   req: Request,
@@ -95,42 +106,54 @@ export const getProjectReviewsWithTasks = async (
 ) => {
   const projectId = Number(req.params.projectId);
 
-  // Validate id
   if (!projectId || isNaN(projectId)) {
-    return res.status(400).json({
-      message: "Invalid project id",
-    });
+    return res.status(400).json({ message: "Invalid project id" });
   }
 
   try {
-    // Check if project exists
     const project = await db.query.projects.findFirst({
       where: eq(projects.id, projectId),
     });
-
-    if (!project) {
-      return res.status(404).json({
-        message: "Project not found",
-      });
-    }
+    if (!project) return res.status(404).json({ message: "Project not found" });
 
     const reviewsData = await db.query.reviews.findMany({
       where: eq(reviews.projectId, projectId),
     });
 
-    // fetch tasks manually
     const reviewIds = reviewsData.map((r) => r.id);
-    const tasksData = await db.query.reviewTasks.findMany({
-      where: inArray(reviewTasks.reviewId, reviewIds),
-    });
 
-    // attach tasks
+    // Fetch tasks for all reviews in one query
+    const tasksData =
+      reviewIds.length > 0
+        ? await db.query.reviewTasks.findMany({
+            where: inArray(reviewTasks.reviewId, reviewIds),
+          })
+        : [];
+
+    // Fetch revision versions linked to each review
+    const revisionVersionIds = reviewsData
+      .map((r) => r.revisionVersionId)
+      .filter(Boolean) as number[];
+
+    const revisionVersions =
+      revisionVersionIds.length > 0
+        ? await db
+            .select()
+            .from(projectVersions)
+            .where(inArray(projectVersions.id, revisionVersionIds))
+        : [];
+
+    const revisionMap = new Map(revisionVersions.map((v) => [v.id, v]));
+
+    // Attach tasks and revision version to each review
     const reviewsWithTasks = reviewsData.map((r) => ({
       ...r,
       tasks: tasksData.filter((t) => t.reviewId === r.id),
+      revisionVersion: r.revisionVersionId
+        ? (revisionMap.get(r.revisionVersionId) ?? null)
+        : null,
     }));
 
-    // No reviews yet
     if (reviewsWithTasks.length === 0) {
       return res.status(200).json({
         message: "No reviews yet for this project",
@@ -144,40 +167,57 @@ export const getProjectReviewsWithTasks = async (
     });
   } catch (error) {
     console.error("Fetch reviews error:", error);
-
-    return res.status(500).json({
-      message: "Failed to fetch project reviews",
-    });
+    return res.status(500).json({ message: "Failed to fetch project reviews" });
   }
 };
 
+// ─────────────────────────────────────────────
+// UPDATE TASK BY STUDENT  (optional evidence file)
+// ─────────────────────────────────────────────
+
 export const updateTaskByStudent = async (req: Request, res: Response) => {
   const { taskId } = req.params;
-  const { status, studentNote, userId } = req.body;
+  const { status, studentNote } = req.body;
+  const file = req.file; // optional evidence file
+
+  if (!["IN_PROGRESS", "COMPLETED"].includes(status)) {
+    return res
+      .status(400)
+      .json({ message: "Invalid status. Use IN_PROGRESS or COMPLETED" });
+  }
+
+  let evidenceUpload: any;
 
   try {
     const task = await db.query.reviewTasks.findFirst({
       where: eq(reviewTasks.id, Number(taskId)),
     });
 
-    if (!task) {
-      return res.status(404).json({ message: "Task not found" });
+    if (!task) return res.status(404).json({ message: "Task not found" });
+
+    // Cannot update a VERIFIED task
+    if (task.status === "VERIFIED") {
+      return res.status(400).json({ message: "Cannot update a verified task" });
     }
 
-    if (!["IN_PROGRESS", "COMPLETED"].includes(status)) {
-      return res.status(400).json({
-        message: "Invalid status update",
-      });
+    // Upload optional evidence file when marking COMPLETED
+    if (file && status === "COMPLETED") {
+      evidenceUpload = await uploadToCloudinary(file.buffer);
     }
 
     const updateData: any = {
       status,
-      studentNote,
+      studentNote: studentNote ?? task.studentNote,
       updatedAt: new Date(),
     };
 
     if (status === "COMPLETED") {
       updateData.completedAt = new Date();
+    }
+
+    if (evidenceUpload) {
+      updateData.evidenceFileUrl = evidenceUpload.url;
+      updateData.evidencePublicId = evidenceUpload.publicId;
     }
 
     const [updatedTask] = await db
@@ -186,43 +226,198 @@ export const updateTaskByStudent = async (req: Request, res: Response) => {
       .where(eq(reviewTasks.id, Number(taskId)))
       .returning();
 
-    // Emit event for email to supervisor
-    const project: any = await db.query.projects.findFirst({
-      where: eq(projects.id, task.projectId),
-      with: { supervisor: true, student: true },
-    });
-
-    // Only emit supervisor email when task is COMPLETED
-    if (updatedTask.status === "COMPLETED" && project?.supervisor?.email) {
-      eventBus.emit(Events.TASK_SUBMITTED, {
-        supervisorEmail: project.supervisor.email,
-        supervisorName: project.supervisor.fullName,
-        studentName: (req as any).user.fullName,
-        projectName: project.title,
-        taskTitle: task.title,
-        taskStatus: updatedTask.status,
+    // Emit emails when task is COMPLETED
+    if (updatedTask.status === "COMPLETED") {
+      const project: any = await db.query.projects.findFirst({
+        where: eq(projects.id, task.projectId),
+        with: { supervisor: true, student: true },
       });
 
-      eventBus.emit(Events.TASK_SUBMITTED_CONFIRMATION, {
-        studentEmail: (req as any).user.email,
-        studentName: (req as any).user.fullName,
-        projectName: project.title,
-        taskTitle: task.title,
-      });
+      if (project?.supervisor?.email) {
+        eventBus.emit(Events.TASK_SUBMITTED, {
+          supervisorEmail: project.supervisor.email,
+          supervisorName: project.supervisor.fullName,
+          studentName: (req as any).user.fullName,
+          projectName: project.title,
+          taskTitle: task.title,
+          taskStatus: updatedTask.status,
+        });
+      }
+
+      if ((req as any).user?.email) {
+        eventBus.emit(Events.TASK_SUBMITTED_CONFIRMATION, {
+          studentEmail: (req as any).user.email,
+          studentName: (req as any).user.fullName,
+          projectName: project?.title,
+          taskTitle: task.title,
+        });
+      }
     }
 
-    res.status(200).json({
+    return res.status(200).json({
       message: "Task updated successfully",
       task: updatedTask,
     });
-  } catch (error) {
-    console.error("New Error", error);
-    res.status(500).json({
-      message: "Failed to update task",
-      error,
+  } catch (error: any) {
+    // Rollback evidence upload on failure
+    if (evidenceUpload?.publicId) {
+      await cloudinary.uploader.destroy(evidenceUpload.publicId);
+    }
+    console.error("updateTaskByStudent error:", error);
+    return res
+      .status(500)
+      .json({ message: "Failed to update task", error: error.message });
+  }
+};
+
+// ─────────────────────────────────────────────
+// SUBMIT REVISION FILE  (student — after completing all tasks)
+// ─────────────────────────────────────────────
+
+export const submitRevisionForReview = async (req: Request, res: Response) => {
+  const studentId = Number((req as any).user?.id);
+  const reviewId = Number(req.params.reviewId);
+  const file = req.file;
+  const { changeNote } = req.body;
+
+  if (!file) {
+    return res.status(400).json({ message: "Revised PDF file is required" });
+  }
+  if (file.size > 20 * 1024 * 1024) {
+    return res.status(400).json({ message: "File size must be < 20MB" });
+  }
+  if (isNaN(reviewId)) {
+    return res.status(400).json({ message: "Invalid review id" });
+  }
+
+  let uploadResult: any;
+
+  try {
+    const result = await db.transaction(async (tx) => {
+      // 1. Load review
+      const review = await tx.query.reviews.findFirst({
+        where: eq(reviews.id, reviewId),
+      });
+      if (!review) throw new Error("Review not found");
+
+      // 2. Load project and confirm student ownership
+      const project = await tx.query.projects.findFirst({
+        where: and(
+          eq(projects.id, review.projectId),
+          eq(projects.studentId, studentId),
+        ),
+      });
+      if (!project) throw new Error("Access denied or project not found");
+
+      // 3. Confirm revision hasn't already been submitted for this review
+      if (review.revisionSubmitted) {
+        throw new Error(
+          "Revision already submitted for this review round. Ask your supervisor to create a new review.",
+        );
+      }
+
+      // 4. Confirm ALL tasks in this review are at least COMPLETED (not PENDING/IN_PROGRESS)
+      const tasks = await tx.query.reviewTasks.findMany({
+        where: eq(reviewTasks.reviewId, reviewId),
+      });
+
+      const incompleteTasks = tasks.filter(
+        (t) => !["COMPLETED", "VERIFIED"].includes(t.status),
+      );
+      if (incompleteTasks.length > 0) {
+        throw new Error(
+          `${incompleteTasks.length} task(s) not yet completed. Complete all tasks before submitting a revision.`,
+        );
+      }
+
+      // 5. Upload file
+      uploadResult = await uploadToCloudinary(file.buffer);
+
+      // 6. Determine next version number
+      const lastVersion = await tx
+        .select()
+        .from(projectVersions)
+        .where(eq(projectVersions.projectId, project.id))
+        .orderBy(desc(projectVersions.versionNumber))
+        .limit(1);
+
+      const nextVersionNumber = (lastVersion[0]?.versionNumber ?? 0) + 1;
+
+      // 7. Insert new version — REVISION_SUBMISSION trigger
+      const [version] = await tx
+        .insert(projectVersions)
+        .values({
+          projectId: project.id,
+          fileUrl: uploadResult.url,
+          publicId: uploadResult.publicId,
+          versionNumber: nextVersionNumber,
+          uploadedBy: studentId,
+          changeNote:
+            changeNote?.trim() || `Revision for review round #${reviewId}`,
+          trigger: "REVISION_SUBMISSION",
+          linkedReviewId: reviewId,
+          fileSizeBytes: file.size,
+        })
+        .returning();
+
+      // 8. Link version to the review record
+      await tx
+        .update(reviews)
+        .set({ revisionVersionId: version.id, revisionSubmitted: true })
+        .where(eq(reviews.id, reviewId));
+
+      // 9. Update project's current version and file references
+      await tx
+        .update(projects)
+        .set({
+          currentVersionId: version.id,
+          fileUrl: uploadResult.url,
+          publicId: uploadResult.publicId,
+          totalVersions: nextVersionNumber,
+          updatedAt: new Date(),
+        })
+        .where(eq(projects.id, project.id));
+
+      return { version, versionNumber: nextVersionNumber, project };
+    });
+
+    // Notify supervisor that revision has been submitted
+    const projectWithSupervisor: any = await db.query.projects.findFirst({
+      where: eq(projects.id, result.project.id),
+      with: { supervisor: true },
+    });
+
+    if (projectWithSupervisor?.supervisor?.email) {
+      eventBus.emit(Events.TASK_SUBMITTED, {
+        supervisorEmail: projectWithSupervisor.supervisor.email,
+        supervisorName: projectWithSupervisor.supervisor.fullName,
+        studentName: (req as any).user.fullName,
+        projectName: result.project.title,
+        taskTitle: `Revision v${result.versionNumber} submitted`,
+        taskStatus: "SUBMITTED",
+      });
+    }
+
+    return res.status(201).json({
+      message: "Revision submitted successfully",
+      versionNumber: result.versionNumber,
+      version: result.version,
+    });
+  } catch (error: any) {
+    if (uploadResult?.publicId) {
+      await cloudinary.uploader.destroy(uploadResult.publicId);
+    }
+    console.error("submitRevisionForReview error:", error);
+    return res.status(500).json({
+      message: "Revision submission failed",
+      error: error.message,
     });
   }
 };
+
+// ─────────────────────────────────────────────
+// VERIFY TASK BY SUPERVISOR
+// ─────────────────────────────────────────────
 
 export const verifyTaskBySupervisor = async (req: Request, res: Response) => {
   const { taskId } = req.params;
@@ -235,9 +430,8 @@ export const verifyTaskBySupervisor = async (req: Request, res: Response) => {
       });
       if (!t) throw new Error("Task not found");
       if (t.status !== "COMPLETED")
-        throw new Error("Task must be completed before verification");
+        throw new Error("Task must be COMPLETED before it can be verified");
 
-      // Verify task
       const [updatedTask] = await tx
         .update(reviewTasks)
         .set({
@@ -249,22 +443,24 @@ export const verifyTaskBySupervisor = async (req: Request, res: Response) => {
         .where(eq(reviewTasks.id, Number(taskId)))
         .returning();
 
-      // Check if all tasks in project are verified
+      // Check if all tasks for this project are now verified
       const allTasks = await tx.query.reviewTasks.findMany({
         where: eq(reviewTasks.projectId, t.projectId),
       });
       const allVerified = allTasks.every((task) => task.status === "VERIFIED");
 
-      // Update project status
       await tx
         .update(projects)
-        .set({ status: allVerified ? "APPROVED" : "REVISION_REQUESTED" })
+        .set({
+          status: allVerified ? "APPROVED" : "REVISION_REQUESTED",
+          updatedAt: new Date(),
+        })
         .where(eq(projects.id, t.projectId));
 
       return updatedTask;
     });
 
-    // Emit email event for student
+    // Notify student
     const projectWithStudent: any = await db.query.projects.findFirst({
       where: eq(projects.id, task.projectId),
       with: { student: true },
@@ -281,30 +477,101 @@ export const verifyTaskBySupervisor = async (req: Request, res: Response) => {
       });
     }
 
-    res.status(200).json({ message: "Task verified successfully", task });
+    return res
+      .status(200)
+      .json({ message: "Task verified successfully", task });
   } catch (err) {
     console.error(err);
     const message = err instanceof Error ? err.message : "Unknown error";
-    res.status(500).json({ message: "Failed to verify task", error: message });
+    return res
+      .status(500)
+      .json({ message: "Failed to verify task", error: message });
   }
 };
+
+// ─────────────────────────────────────────────
+// UPDATE PROJECT STATUS  (supervisor — requires all tasks VERIFIED)
+// ─────────────────────────────────────────────
+
+export const updateProjectStatus = async (req: Request, res: Response) => {
+  const supervisorId = Number((req as any).user.id);
+  const projectId = Number(req.params.id);
+  const { status } = req.body as {
+    status: "APPROVED" | "REJECTED" | "REVISION_REQUESTED";
+  };
+
+  const validStatuses = ["APPROVED", "REJECTED", "REVISION_REQUESTED"];
+  if (!validStatuses.includes(status)) {
+    return res.status(400).json({ message: "Invalid status value" });
+  }
+
+  try {
+    const project = await db
+      .select()
+      .from(projects)
+      .where(eq(projects.id, projectId));
+
+    if (!project.length || project[0].supervisorId !== supervisorId) {
+      return res
+        .status(403)
+        .json({ message: "You cannot update this project" });
+    }
+
+    // Block APPROVED if unverified tasks remain
+    if (status === "APPROVED") {
+      const unverifiedTasks = await db
+        .select()
+        .from(reviewTasks)
+        .where(
+          and(
+            eq(reviewTasks.projectId, projectId),
+            not(eq(reviewTasks.status, "VERIFIED")),
+          ),
+        );
+
+      if (unverifiedTasks.length > 0) {
+        return res.status(400).json({
+          message: `Cannot approve: ${unverifiedTasks.length} task(s) not yet verified`,
+        });
+      }
+    }
+
+    await db
+      .update(projects)
+      .set({ status, updatedAt: new Date() })
+      .where(eq(projects.id, projectId));
+
+    return res
+      .status(200)
+      .json({ message: "Project status updated successfully" });
+  } catch (error) {
+    console.error("Error updating project status:", error);
+    return res
+      .status(500)
+      .json({ message: "Failed to update project status", error });
+  }
+};
+
+// ─────────────────────────────────────────────
+// DELETE TASK
+// ─────────────────────────────────────────────
 
 export const deleteTask = async (req: Request, res: Response) => {
   const { taskId } = req.params;
 
   try {
-    // 1. Check if task exists
     const existingTask = await db.query.reviewTasks.findFirst({
       where: eq(reviewTasks.id, Number(taskId)),
     });
-
-    if (!existingTask) {
+    if (!existingTask)
       return res.status(404).json({ message: "Task not found" });
+
+    // Clean up evidence file from Cloudinary if it exists
+    if (existingTask.evidencePublicId) {
+      await cloudinary.uploader.destroy(existingTask.evidencePublicId);
     }
 
-    // 2. Perform deletion
     await db.delete(reviewTasks).where(eq(reviewTasks.id, Number(taskId)));
-
     return res.status(200).json({ message: "Task deleted successfully" });
   } catch (error) {
     console.error("Error deleting task:", error);
@@ -312,27 +579,36 @@ export const deleteTask = async (req: Request, res: Response) => {
   }
 };
 
+// ─────────────────────────────────────────────
+// DELETE REVIEW
+// ─────────────────────────────────────────────
+
 export const deleteReview = async (req: Request, res: Response) => {
   const { reviewId } = req.params;
 
   try {
-    // 1. Check if review exists
     const existingReview = await db.query.reviews.findFirst({
       where: eq(reviews.id, Number(reviewId)),
     });
-
     if (!existingReview) {
       return res.status(404).json({ message: "Review round not found" });
     }
 
-    // 2. Transaction to ensure both Review and its Tasks are removed safely
     await db.transaction(async (tx) => {
-      // Delete all tasks linked to this review first
+      // Fetch and clean up evidence files
+      const tasks = await tx.query.reviewTasks.findMany({
+        where: eq(reviewTasks.reviewId, Number(reviewId)),
+      });
+      for (const t of tasks) {
+        if (t.evidencePublicId) {
+          await cloudinary.uploader.destroy(t.evidencePublicId);
+        }
+      }
+
       await tx
         .delete(reviewTasks)
         .where(eq(reviewTasks.reviewId, Number(reviewId)));
 
-      // Delete the review record itself
       await tx.delete(reviews).where(eq(reviews.id, Number(reviewId)));
     });
 
