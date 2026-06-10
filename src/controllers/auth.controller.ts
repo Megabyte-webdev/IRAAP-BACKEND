@@ -9,7 +9,7 @@ import { z } from "zod";
 // Zod schema for validation
 const loginSchema = z.object({
   email: z.string().email(),
-  password: z.string().min(6),
+  password: z.string().min(3),
 });
 
 export const login = async (req: Request, res: Response) => {
