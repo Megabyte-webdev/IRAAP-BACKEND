@@ -12,9 +12,7 @@ import {
   boolean,
 } from "drizzle-orm/pg-core";
 
-// ─────────────────────────────────────────────
 // ENUMS
-// ─────────────────────────────────────────────
 
 export const roleEnum = pgEnum("role", ["STUDENT", "SUPERVISOR", "ADMIN"]);
 
@@ -38,16 +36,11 @@ export const messageStatusEnum = pgEnum("message_status", [
   "READ",
 ]);
 
-// NEW: tracks what triggered a version upload
 export const versionTriggerEnum = pgEnum("version_trigger", [
-  "INITIAL_SUBMISSION", // student first submits
-  "STUDENT_UPDATE", // student edits project before any review
-  "REVISION_SUBMISSION", // student submits after completing review tasks
+  "INITIAL_SUBMISSION",
+  "STUDENT_UPDATE",
+  "REVISION_SUBMISSION",
 ]);
-
-// ─────────────────────────────────────────────
-// TABLES
-// ─────────────────────────────────────────────
 
 export const users = pgTable(
   "users",
@@ -74,9 +67,6 @@ export const categories = pgTable("categories", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
-// ─────────────────────────────────────────────
-// PROJECT VERSIONS  (enhanced)
-// ─────────────────────────────────────────────
 export const projectVersions = pgTable(
   "project_versions",
   {
@@ -97,16 +87,12 @@ export const projectVersions = pgTable(
 
     changeNote: text("change_note"),
 
-    // NEW: which review round triggered this version (null for initial/student edits)
     linkedReviewId: integer("linked_review_id"),
-    // NOTE: forward-reference resolved via FK definition after reviews table
 
-    // NEW: what action created this version
     trigger: versionTriggerEnum("trigger")
       .default("INITIAL_SUBMISSION")
       .notNull(),
 
-    // NEW: file size in bytes for display
     fileSizeBytes: integer("file_size_bytes"),
 
     createdAt: timestamp("created_at").defaultNow(),
@@ -127,7 +113,6 @@ export const projects = pgTable(
     title: text("title").notNull(),
     abstract: text("abstract").notNull(),
 
-    // Kept for legacy / quick access; always mirrors currentVersion's fileUrl
     fileUrl: text("file_url").notNull(),
     publicId: text("public_id").notNull(),
 
@@ -144,7 +129,6 @@ export const projects = pgTable(
       () => projectVersions.id,
     ),
 
-    // NEW: total number of versions for quick display
     totalVersions: integer("total_versions").default(1).notNull(),
 
     submissionYear: integer("submission_year").notNull(),
@@ -174,12 +158,10 @@ export const reviews = pgTable("reviews", {
 
   summary: text("summary"),
 
-  // NEW: the revised version submitted by the student after this review round
   revisionVersionId: integer("revision_version_id").references(
     () => projectVersions.id,
   ),
 
-  // NEW: flag – has the student submitted their revision file for this round?
   revisionSubmitted: boolean("revision_submitted").default(false).notNull(),
 
   createdAt: timestamp("created_at").defaultNow(),
@@ -205,7 +187,6 @@ export const reviewTasks = pgTable(
 
     studentNote: text("student_note"),
 
-    // NEW: optional per-task evidence file (e.g. screenshot, partial doc)
     evidenceFileUrl: text("evidence_file_url"),
     evidencePublicId: text("evidence_public_id"),
 
@@ -302,10 +283,6 @@ export const messages = pgTable(
     ),
   }),
 );
-
-// ─────────────────────────────────────────────
-// RELATIONS
-// ─────────────────────────────────────────────
 
 export const projectsRelations = relations(projects, ({ one, many }) => ({
   student: one(users, {

@@ -95,6 +95,7 @@ export const createReviewWithTasks = async (req: Request, res: Response) => {
       .json({ message: "Failed to create review", error: message });
   }
 };
+
 // GET REVIEWS WITH TASKS FOR A PROJECT
 export const getProjectReviewsWithTasks = async (
   req: Request,
@@ -107,55 +108,14 @@ export const getProjectReviewsWithTasks = async (
   }
 
   try {
-    const project = await db.query.projects.findFirst({
-      where: eq(projects.id, projectId),
-    });
-    if (!project) return res.status(404).json({ message: "Project not found" });
-
-    const reviewsData = await db.query.reviews.findMany({
+    // Elegant, single-query, type-safe relational retrieval
+    const reviewsWithTasks = await db.query.reviews.findMany({
       where: eq(reviews.projectId, projectId),
+      with: {
+        tasks: true,
+        revisionVersion: true,
+      },
     });
-
-    const reviewIds = reviewsData.map((r) => r.id);
-
-    // Fetch tasks for all reviews in one query
-    const tasksData =
-      reviewIds.length > 0
-        ? await db.query.reviewTasks.findMany({
-            where: inArray(reviewTasks.reviewId, reviewIds),
-          })
-        : [];
-
-    // Fetch revision versions linked to each review
-    const revisionVersionIds = reviewsData
-      .map((r) => r.revisionVersionId)
-      .filter(Boolean) as number[];
-
-    const revisionVersions =
-      revisionVersionIds.length > 0
-        ? await db
-            .select()
-            .from(projectVersions)
-            .where(inArray(projectVersions.id, revisionVersionIds))
-        : [];
-
-    const revisionMap = new Map(revisionVersions.map((v) => [v.id, v]));
-
-    // Attach tasks and revision version to each review
-    const reviewsWithTasks = reviewsData.map((r) => ({
-      ...r,
-      tasks: tasksData.filter((t) => t.reviewId === r.id),
-      revisionVersion: r.revisionVersionId
-        ? (revisionMap.get(r.revisionVersionId) ?? null)
-        : null,
-    }));
-
-    if (reviewsWithTasks.length === 0) {
-      return res.status(200).json({
-        message: "No reviews yet for this project",
-        data: [],
-      });
-    }
 
     return res.status(200).json({
       message: "Reviews fetched successfully",
@@ -166,11 +126,11 @@ export const getProjectReviewsWithTasks = async (
     return res.status(500).json({ message: "Failed to fetch project reviews" });
   }
 };
+
 // UPDATE TASK BY STUDENT  (optional evidence file)
 export const updateTaskByStudent = async (req: Request, res: Response) => {
   const { taskId } = req.params;
   const { status, studentNote } = req.body;
-  const file = req.file; // optional evidence file
 
   if (!["IN_PROGRESS", "COMPLETED"].includes(status)) {
     return res
@@ -178,23 +138,15 @@ export const updateTaskByStudent = async (req: Request, res: Response) => {
       .json({ message: "Invalid status. Use IN_PROGRESS or COMPLETED" });
   }
 
-  let evidenceUpload: any;
-
   try {
+    // 1. Fetch task context
     const task = await db.query.reviewTasks.findFirst({
       where: eq(reviewTasks.id, Number(taskId)),
     });
 
     if (!task) return res.status(404).json({ message: "Task not found" });
-
-    // Cannot update a VERIFIED task
     if (task.status === "VERIFIED") {
       return res.status(400).json({ message: "Cannot update a verified task" });
-    }
-
-    // Upload optional evidence file when marking COMPLETED
-    if (file && status === "COMPLETED") {
-      evidenceUpload = await uploadToCloudinary(file.buffer);
     }
 
     const updateData: any = {
@@ -207,61 +159,65 @@ export const updateTaskByStudent = async (req: Request, res: Response) => {
       updateData.completedAt = new Date();
     }
 
-    if (evidenceUpload) {
-      updateData.evidenceFileUrl = evidenceUpload.url;
-      updateData.evidencePublicId = evidenceUpload.publicId;
-    }
+    // 2. Execute state update and progress analytics in a clean transaction
+    const result = await db.transaction(async (tx) => {
+      const [updated] = await tx
+        .update(reviewTasks)
+        .set(updateData)
+        .where(eq(reviewTasks.id, Number(taskId)))
+        .returning();
 
-    const [updatedTask] = await db
-      .update(reviewTasks)
-      .set(updateData)
-      .where(eq(reviewTasks.id, Number(taskId)))
-      .returning();
+      // Get all sibling tasks in this specific review round
+      const totalTasks = await tx
+        .select()
+        .from(reviewTasks)
+        .where(eq(reviewTasks.reviewId, task.reviewId));
 
-    // Emit emails when task is COMPLETED
-    if (updatedTask.status === "COMPLETED") {
-      const project: any = await db.query.projects.findFirst({
+      const incompleteTasks = totalTasks.filter(
+        (t) => !["COMPLETED", "VERIFIED"].includes(t.status),
+      );
+
+      const projectInfo: any = await tx.query.projects.findFirst({
         where: eq(projects.id, task.projectId),
-        with: { supervisor: true, student: true },
+        with: { supervisor: true },
       });
 
-      if (project?.supervisor?.email) {
-        eventBus.emit(Events.TASK_SUBMITTED, {
-          supervisorEmail: project.supervisor.email,
-          supervisorName: project.supervisor.fullName,
-          studentName: (req as any).user.fullName,
-          projectName: project.title,
-          taskTitle: task.title,
-          taskStatus: updatedTask.status,
-        });
-      }
+      return {
+        updatedTask: updated,
+        remainingCount: incompleteTasks.length,
+        project: projectInfo,
+      };
+    });
 
-      if ((req as any).user?.email) {
-        eventBus.emit(Events.TASK_SUBMITTED_CONFIRMATION, {
-          studentEmail: (req as any).user.email,
+    // 3. Emit progress updates to your Event Bus based on Remaining Tasks
+    if (result.updatedTask.status === "COMPLETED") {
+      if (result.project?.supervisor?.email) {
+        eventBus.emit(Events.TASK_SUBMITTED, {
+          supervisorEmail: result.project.supervisor.email,
+          supervisorName: result.project.supervisor.fullName,
           studentName: (req as any).user.fullName,
-          projectName: project?.title,
+          projectName: result.project.title,
           taskTitle: task.title,
+          remainingCount: result.remainingCount,
+          isRoundFinished: result.remainingCount === 0,
         });
       }
     }
 
     return res.status(200).json({
-      message: "Task updated successfully",
-      task: updatedTask,
+      message: "Task progress recorded successfully",
+      task: result.updatedTask,
+      remainingTasks: result.remainingCount,
     });
   } catch (error: any) {
-    // Rollback evidence upload on failure
-    if (evidenceUpload?.publicId) {
-      await cloudinary.uploader.destroy(evidenceUpload.publicId);
-    }
     console.error("updateTaskByStudent error:", error);
-    return res
-      .status(500)
-      .json({ message: "Failed to update task", error: error.message });
+    return res.status(500).json({
+      message: "Failed to update task progress",
+      error: error.message,
+    });
   }
 };
-// SUBMIT REVISION FILE  (student — after completing all tasks)
+
 export const submitRevisionForReview = async (req: Request, res: Response) => {
   const studentId = Number((req as any).user?.id);
   const reviewId = Number(req.params.reviewId);
@@ -269,59 +225,49 @@ export const submitRevisionForReview = async (req: Request, res: Response) => {
   const changeNote = req.body?.changeNote;
 
   if (!file) {
-    return res.status(400).json({ message: "Revised PDF file is required" });
-  }
-  if (file.size > 20 * 1024 * 1024) {
-    return res.status(400).json({ message: "File size must be < 20MB" });
+    return res.status(400).json({
+      message: "Revised project thesis PDF document file is required",
+    });
   }
   if (isNaN(reviewId)) {
-    return res.status(400).json({ message: "Invalid review id" });
+    return res.status(400).json({ message: "Invalid review round reference" });
   }
 
-  let uploadResult: any;
+  // Intercept early before processing any high-compute uploads if tasks remain open
+  const tasks = await db
+    .select()
+    .from(reviewTasks)
+    .where(eq(reviewTasks.reviewId, reviewId));
+  const openTasks = tasks.filter(
+    (t) => !["COMPLETED", "VERIFIED"].includes(t.status),
+  );
+
+  if (openTasks.length > 0) {
+    return res.status(400).json({
+      message: `Action Blocked: ${openTasks.length} task(s) are still pending completion. You must submit progress indicators for all items before bundling a new version.`,
+    });
+  }
+
+  const uploadResult: any = await uploadToCloudinary(file.buffer);
 
   try {
     const result = await db.transaction(async (tx) => {
-      // 1. Load review
       const review = await tx.query.reviews.findFirst({
         where: eq(reviews.id, reviewId),
       });
-      if (!review) throw new Error("Review not found");
+      if (!review || review.revisionSubmitted) {
+        throw new Error("Review round already closed or not found.");
+      }
 
-      // 2. Load project and confirm student ownership
       const project = await tx.query.projects.findFirst({
         where: and(
           eq(projects.id, review.projectId),
           eq(projects.studentId, studentId),
         ),
       });
-      if (!project) throw new Error("Access denied or project not found");
+      if (!project) throw new Error("Access denied or project mismatch.");
 
-      // 3. Confirm revision hasn't already been submitted for this review
-      if (review.revisionSubmitted) {
-        throw new Error(
-          "Revision already submitted for this review round. Ask your supervisor to create a new review.",
-        );
-      }
-
-      // 4. Confirm ALL tasks in this review are at least COMPLETED (not PENDING/IN_PROGRESS)
-      const tasks = await tx.query.reviewTasks.findMany({
-        where: eq(reviewTasks.reviewId, reviewId),
-      });
-
-      const incompleteTasks = tasks.filter(
-        (t) => !["COMPLETED", "VERIFIED"].includes(t.status),
-      );
-      if (incompleteTasks.length > 0) {
-        throw new Error(
-          `${incompleteTasks.length} task(s) not yet completed. Complete all tasks before submitting a revision.`,
-        );
-      }
-
-      // 5. Upload file
-      uploadResult = await uploadToCloudinary(file.buffer);
-
-      // 6. Determine next version number
+      // Calculate the next version number cleanly
       const lastVersion = await tx
         .select()
         .from(projectVersions)
@@ -331,8 +277,8 @@ export const submitRevisionForReview = async (req: Request, res: Response) => {
 
       const nextVersionNumber = (lastVersion[0]?.versionNumber ?? 0) + 1;
 
-      // 7. Insert new version — REVISION_SUBMISSION trigger
-      const inserted = await tx
+      // 1. Create the structured immutable audit snapshot record
+      const insertedVersion = await tx
         .insert(projectVersions)
         .values({
           projectId: project.id,
@@ -341,37 +287,40 @@ export const submitRevisionForReview = async (req: Request, res: Response) => {
           versionNumber: nextVersionNumber,
           uploadedBy: studentId,
           changeNote:
-            changeNote?.trim() || `Revision for review round #${reviewId}`,
+            changeNote?.trim() ||
+            `Consolidated corrections for Review Round #${reviewId}`,
           trigger: "REVISION_SUBMISSION",
           linkedReviewId: reviewId,
           fileSizeBytes: file.size,
         })
         .returning();
 
-      const version = Array.isArray(inserted) ? inserted[0] : (inserted as any);
-
-      // 8. Link version to the review record
+      // 2. Lock down the closed review cycle round
       await tx
         .update(reviews)
-        .set({ revisionVersionId: version.id, revisionSubmitted: true })
+        .set({
+          revisionVersionId: insertedVersion[0].id,
+          revisionSubmitted: true,
+        })
         .where(eq(reviews.id, reviewId));
 
-      // 9. Update project's current version and file references
+      // 3. Update the primary pointer references on the top-level project catalog entry
       await tx
         .update(projects)
         .set({
-          currentVersionId: version.id,
+          currentVersionId: insertedVersion[0].id,
           fileUrl: uploadResult.url,
           publicId: uploadResult.publicId,
           totalVersions: nextVersionNumber,
+          status: "PENDING",
           updatedAt: new Date(),
         })
         .where(eq(projects.id, project.id));
 
-      return { version, versionNumber: nextVersionNumber, project };
+      return { versionNumber: nextVersionNumber, project };
     });
 
-    // Notify supervisor that revision has been submitted
+    // Notify supervisor that version has dropped
     const projectWithSupervisor: any = await db.query.projects.findFirst({
       where: eq(projects.id, result.project.id),
       with: { supervisor: true },
@@ -383,42 +332,78 @@ export const submitRevisionForReview = async (req: Request, res: Response) => {
         supervisorName: projectWithSupervisor.supervisor.fullName,
         studentName: (req as any).user.fullName,
         projectName: result.project.title,
-        taskTitle: `Revision v${result.versionNumber} submitted`,
-        taskStatus: "SUBMITTED",
+        taskTitle: `Project Version ${result.versionNumber} Uploaded`,
+        taskStatus: "REVISION_SUBMITTED",
+      });
+    }
+    if ((req as any).user?.email) {
+      eventBus.emit(Events.TASK_SUBMITTED_CONFIRMATION, {
+        studentEmail: (req as any).user.email,
+        studentName: (req as any).user.fullName,
+        projectName: result.project.title,
+        taskTitle: `Project Version ${result.versionNumber} Uploaded`,
       });
     }
 
     return res.status(201).json({
-      message: "Revision submitted successfully",
-      versionNumber: result.versionNumber,
-      version: result.version,
+      message: "Revision document upload processed and stored successfully.",
+      data: {
+        id: result.project.currentVersionId,
+        projectId: result.project.id,
+        revisionVersionId: result.versionNumber,
+        revisionSubmitted: true,
+        reviewerId: result.project.reviewerId,
+        revisionVersion: {
+          versionNumber: result.versionNumber,
+          changeNote: changeNote?.trim(),
+          fileUrl: uploadResult.url,
+          uploadedBy: studentId,
+          fileSizeBytes: file.size,
+          linkedReviewId: reviewId,
+          createdAt: new Date(),
+        },
+      },
     });
   } catch (error: any) {
     if (uploadResult?.publicId) {
       await cloudinary.uploader.destroy(uploadResult.publicId);
     }
     console.error("submitRevisionForReview error:", error);
-    return res.status(500).json({
-      message: "Revision submission failed",
-      error: error.message,
-    });
+    return res
+      .status(500)
+      .json({ message: "Compilation pipeline failed", error: error.message });
   }
 };
 // VERIFY TASK BY SUPERVISOR
-export const verifyTaskBySupervisor = async (req: Request, res: Response) => {
-  const { taskId } = req.params;
+export const verifyReviewRoundBySupervisor = async (
+  req: Request,
+  res: Response,
+) => {
+  const reviewId = Number(req.params.reviewId);
   const supervisorId = Number((req as any).user.id);
 
-  try {
-    const task = await db.transaction(async (tx) => {
-      const t = await tx.query.reviewTasks.findFirst({
-        where: eq(reviewTasks.id, Number(taskId)),
-      });
-      if (!t) throw new Error("Task not found");
-      if (t.status !== "COMPLETED")
-        throw new Error("Task must be COMPLETED before it can be verified");
+  if (isNaN(reviewId)) {
+    return res.status(400).json({ message: "Invalid review round reference" });
+  }
 
-      const [updatedTask] = await tx
+  try {
+    const result = await db.transaction(async (tx) => {
+      const review = await tx.query.reviews.findFirst({
+        where: eq(reviews.id, reviewId),
+      });
+
+      if (!review) throw new Error("Review round not found");
+
+      const project = await tx.query.projects.findFirst({
+        where: and(
+          eq(projects.id, review.projectId),
+          eq(projects.supervisorId, supervisorId),
+        ),
+      });
+
+      if (!project) throw new Error("Access denied or project mismatch");
+
+      await tx
         .update(reviewTasks)
         .set({
           status: "VERIFIED",
@@ -426,58 +411,75 @@ export const verifyTaskBySupervisor = async (req: Request, res: Response) => {
           verifiedAt: new Date(),
           updatedAt: new Date(),
         })
-        .where(eq(reviewTasks.id, Number(taskId)))
-        .returning();
+        .where(
+          and(
+            eq(reviewTasks.reviewId, reviewId),
+            inArray(reviewTasks.status, [
+              "PENDING",
+              "IN_PROGRESS",
+              "COMPLETED",
+            ]),
+          ),
+        );
 
-      // Check if all tasks for this project are now verified
-      const reviewTasksForReview = await tx.query.reviewTasks.findMany({
-        where: eq(reviewTasks.reviewId, t.reviewId),
+      // 4. Global system check: Are ALL tasks for this entire project now VERIFIED?
+      const allProjectTasks = await tx.query.reviewTasks.findMany({
+        where: eq(reviewTasks.projectId, project.id),
       });
 
-      const allVerified = reviewTasksForReview.every(
-        (task) => task.status === "VERIFIED",
+      const completelyFinished = allProjectTasks.every(
+        (t) => t.status === "VERIFIED",
       );
-      if (allVerified) {
+
+      // If everything across the board is clear, mark the core project as APPROVED
+      if (completelyFinished) {
         await tx
           .update(projects)
           .set({
             status: "APPROVED",
             updatedAt: new Date(),
           })
-          .where(eq(projects.id, t.projectId));
+          .where(eq(projects.id, project.id));
       }
 
-      return updatedTask;
+      // Fetch student info for the events loop notification
+      const projectWithStudent: any = await tx.query.projects.findFirst({
+        where: eq(projects.id, project.id),
+        with: { student: true },
+      });
+
+      return {
+        project,
+        projectWithStudent,
+        isFullyApproved: completelyFinished,
+      };
     });
 
-    // Notify student
-    const projectWithStudent: any = await db.query.projects.findFirst({
-      where: eq(projects.id, task.projectId),
-      with: { student: true },
-    });
-
-    if (projectWithStudent?.student?.email) {
+    // 5. Trigger notifications out-of-band
+    if (result.projectWithStudent?.student?.email) {
       eventBus.emit(Events.TASK_VERIFIED, {
-        studentEmail: projectWithStudent.student.email,
-        studentName: projectWithStudent.student.fullName,
-        projectName: projectWithStudent.title,
-        taskTitle: task.title,
+        studentEmail: result.projectWithStudent.student.email,
+        studentName: result.projectWithStudent.student.fullName,
+        projectName: result.project.title,
+        taskTitle: `All tasks in round "${reviewId}" approved`,
         supervisorName: (req as any).user.fullName,
-        taskStatus: task.status,
+        taskStatus: "VERIFIED",
       });
     }
 
-    return res
-      .status(200)
-      .json({ message: "Task verified successfully", task });
-  } catch (err) {
-    console.error(err);
-    const message = err instanceof Error ? err.message : "Unknown error";
-    return res
-      .status(500)
-      .json({ message: "Failed to verify task", error: message });
+    return res.status(200).json({
+      message: "Review round bundle verified and updated successfully",
+      isProjectApproved: result.isFullyApproved,
+    });
+  } catch (error: any) {
+    console.error("verifyReviewRoundBySupervisor error:", error);
+    return res.status(500).json({
+      message: "Failed to verify review round bundle",
+      error: error.message,
+    });
   }
 };
+
 // UPDATE PROJECT STATUS  (supervisor — requires all tasks VERIFIED)
 export const updateProjectStatus = async (req: Request, res: Response) => {
   const supervisorId = Number((req as any).user.id);

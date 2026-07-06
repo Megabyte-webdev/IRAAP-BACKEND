@@ -49,11 +49,9 @@ export const submitProject = async (req: Request, res: Response) => {
   parsed.methodology = sanitizeString(parsed.methodology);
   parsed.researchArea = sanitizeString(parsed.researchArea);
 
-  let uploadResult: any;
+  const uploadResult: any = await uploadToCloudinary(file.buffer);
 
   try {
-    uploadResult = await uploadToCloudinary(file.buffer);
-
     const result = await db.transaction(async (tx) => {
       const [project] = await (tx
         .insert(projects)

@@ -6,7 +6,7 @@ import {
   getProjectReviewsWithTasks,
   submitRevisionForReview,
   updateTaskByStudent,
-  verifyTaskBySupervisor,
+  verifyReviewRoundBySupervisor,
 } from "../controllers/review.controller.js";
 import { authenticate, authorize } from "../middleware/auth.js";
 import { upload } from "../middleware/upload.js";
@@ -43,10 +43,10 @@ router.patch(
 );
 
 router.patch(
-  "/tasks/:taskId/verify",
+  "/:reviewId/approve",
   authenticate,
   authorize(["SUPERVISOR"]),
-  verifyTaskBySupervisor,
+  verifyReviewRoundBySupervisor,
 );
 
 router.delete(

@@ -1,4 +1,4 @@
-export const mainLayout = (content: any) => {
+export const mainLayout = (content: string) => {
   const year = new Date().getFullYear();
   return `
 <!DOCTYPE html>
@@ -7,60 +7,64 @@ export const mainLayout = (content: any) => {
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>IRAP Notification</title>
+  <!--[if mso]>
+  <style type="text/css">
+    table { border-collapse: collapse; }
+  </style>
+  <![endif]-->
 </head>
-<body style="margin: 0; padding: 0; background-color: #f1f5f9; font-family: 'Helvetica', Arial, sans-serif; width: 100vw;">
+<body style="margin: 0; padding: 0; background-color: #f1f5f9; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%; width: 100% !important;">
 
-  <!-- Outer Table -->
-  <table width="100%" cellpadding="0" cellspacing="0" border="0">
+  <!-- Outer Canvas Table -->
+  <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color: #f1f5f9; width: 100% !important;">
     <tr>
       <td align="center" style="padding: 40px 10px;">
 
-        <!-- Inner Card -->
-        <table cellpadding="0" cellspacing="0" border="0" style="background-color: #ffffff; border-radius: 12px; border: 1px solid #e2e8f0; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.08);">
+        <!-- Fixed Width Core Shell Wrapper Container -->
+        <table class="email-container" width="600" cellpadding="0" cellspacing="0" border="0" style="width: 600px; max-width: 600px; background-color: #ffffff; border-radius: 12px; border: 1px solid #e2e8f0; border-collapse: collapse; overflow: hidden;">
 
-          <!-- Header with Logo -->
+          <!-- Branding Banner -->
           <tr>
-            <td align="center" style="padding: 24px 0; background-color: #4f46e5;">
-              <img src="https://iraap.com.ng/irap-logo.png" alt="IRAP Logo" width="80" style="display: block; margin-bottom: 12px;">
-              <h1 style="color: #ffffff; font-size: 22px; margin: 0; letter-spacing: 1px; font-weight: 800;">IRAP Repository</h1>
+            <td align="center" style="padding: 32px 20px; background-color: #4f46e5;">
+              <img src="https://iraap.com.ng/irap-logo.png" alt="IRAP Logo" width="70" style="display: block; margin-bottom: 12px; border: 0;">
+              <h1 style="color: #ffffff; font-size: 22px; margin: 0; letter-spacing: 0.5px; font-weight: 800;">IRAP Repository</h1>
             </td>
           </tr>
 
-          <!-- Email Content -->
+          <!-- Injected Child Component Slot Content -->
           <tr>
-            <td style="padding: 40px; color: #334155; font-size: 16px; line-height: 1.6;">
+            <td style="padding: 36px; color: #334155; font-size: 15px; line-height: 1.6;">
               ${content}
             </td>
           </tr>
 
-          <!-- Call-to-Action / Button Example (Optional) -->
-          <!--
+          <!-- Footer Segment -->
           <tr>
-            <td align="center" style="padding: 0 40px 40px 40px;">
-              <a href="https://www.iraap.com.ng" target="_blank" style="background-color: #4f46e5; color: #ffffff; text-decoration: none; padding: 12px 24px; border-radius: 6px; font-weight: 600; display: inline-block;">Go to Portal</a>
-            </td>
-          </tr>
-          -->
+            <td style="padding: 28px 20px; background-color: #f8fafc; border-top: 1px solid #e2e8f0; text-align: center; color: #94a3b8; font-size: 12px; line-height: 1.5;">
+              <p style="margin: 0 0 10px 0; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: #64748b; font-size: 11px;">Connect with IRAP</p>
+              
+              <table align="center" cellpadding="0" cellspacing="0" border="0" style="margin: 0 auto;">
+                <tr>
+                  <td style="padding: 0 8px;">
+                    <a href="https://www.instagram.com/irap.001" target="_blank" style="text-decoration: none;">
+                      <img src="https://img.icons8.com/ios-filled/50/94a3b8/instagram-new.png" alt="Instagram" width="22" height="22" style="display: block; border: 0;">
+                    </a>
+                  </td>
+                  <td style="padding: 0 8px;">
+                    <a href="https://www.tiktok.com/@irap406" target="_blank" style="text-decoration: none;">
+                      <img src="https://img.icons8.com/ios-filled/50/94a3b8/tiktok.png" alt="TikTok" width="22" height="22" style="display: block; border: 0;">
+                    </a>
+                  </td>
+                  <td style="padding: 0 8px;">
+                    <a href="https://www.linkedin.com/company/irapplatform" target="_blank" style="text-decoration: none;">
+                      <img src="https://img.icons8.com/ios-filled/50/94a3b8/linkedin.png" alt="LinkedIn" width="22" height="22" style="display: block; border: 0;">
+                    </a>
+                  </td>
+                </tr>
+              </table>
 
-          <!-- Footer -->
-          <tr>
-            <td style="padding: 24px; background-color: #f8fafc; text-align: center; color: #94a3b8; font-size: 12px;">
-
-              <!-- Social Links -->
-              <p style="margin: 0 0 8px 0;">Follow us on</p>
-              <a href="https://www.instagram.com/irap.001" target="_blank" style="margin: 0 6px; text-decoration: none;">
-                <img src="https://cdn.jsdelivr.net/gh/simple-icons/simple-icons/icons/instagram.svg" alt="Instagram" width="24" height="24" style="vertical-align: middle;">
-              </a>
-              <a href="https://www.tiktok.com/@irap406" target="_blank" style="margin: 0 6px; text-decoration: none;">
-                <img src="https://cdn.jsdelivr.net/gh/simple-icons/simple-icons/icons/tiktok.svg" alt="TikTok" width="24" height="24" style="vertical-align: middle;">
-              </a>
-              <a href="https://www.linkedin.com/company/irapplatform" target="_blank" style="margin: 0 6px; text-decoration: none;">
-                <img src="https://cdn.jsdelivr.net/gh/simple-icons/simple-icons/icons/linkedin.svg" alt="LinkedIn" width="24" height="24" style="vertical-align: middle;">
-              </a>
-
-              <!-- Legal / Info -->
-              <p style="margin: 12px 0 0 0;">This is an automated notification from the IRAP School Portal.</p>
-              <p style="margin: 4px 0 0 0;">© ${year} Institutional Research Archive Platform</p>
+              <p style="margin: 16px 0 0 0; color: #64748b;">This is an automated operational system notification.</p>
+              <p style="margin: 4px 0 0 0;">&copy; ${year} Institutional Research Archive Platform. All rights reserved.</p>
             </td>
           </tr>
 

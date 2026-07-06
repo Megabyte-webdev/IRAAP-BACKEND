@@ -1,12 +1,13 @@
-import { amendmentTemplate } from "./templates/ammendment.js";
+import { amendmentTemplate } from "./templates/amendment.js";
 import { assignedTemplate } from "./templates/assigned.js";
-import { submittedTemplate } from "./templates/submitted.js";
+import { taskSubmittedTemplate } from "./templates/taskSubmitted.js";
+import { revisionSubmittedTemplate } from "./templates/revisionSubmitted.js";
 import { taskSubmissionTemplate } from "./templates/taskSubmission.js";
 import { registeredTemplate } from "./templates/userRegister.js";
 import { verifiedTemplate } from "./templates/verified.js";
 
 export const getEmailData = (type: string, payload: any) => {
-  const frontendUrl = "https://iraap.com.ng/";
+  const frontendUrl = "https://iraap.com.ng";
 
   switch (type) {
     case "TASK_ASSIGNED":
@@ -17,17 +18,25 @@ export const getEmailData = (type: string, payload: any) => {
 
     case "TASK_SUBMITTED":
       return {
-        subject: `[Review Required] ${payload.studentName} submitted work`,
-        html: submittedTemplate({ ...payload, dashboardUrl: frontendUrl }),
+        subject: payload.isRoundFinished
+          ? `[Action Required] Corrections Completed - ${payload.studentName}`
+          : `[IRAAP Progress Update] ${payload.studentName} updated task checklist items`,
+        html: taskSubmittedTemplate({ ...payload, dashboardUrl: frontendUrl }),
+      };
+
+    case "REVISION_SUBMITTED":
+      return {
+        subject: `[Review Required] Version ${payload.versionNumber} Compiled Assets Dropped`,
+        html: revisionSubmittedTemplate({
+          ...payload,
+          dashboardUrl: frontendUrl,
+        }),
       };
 
     case "TASK_SUBMITTED_CONFIRMATION":
       return {
         subject: `[IRAAP] Submission Received: ${payload.taskTitle}`,
-        html: taskSubmissionTemplate({
-          ...payload,
-          dashboardUrl: frontendUrl,
-        }),
+        html: taskSubmissionTemplate({ ...payload, dashboardUrl: frontendUrl }),
       };
 
     case "TASK_VERIFIED":
@@ -36,19 +45,16 @@ export const getEmailData = (type: string, payload: any) => {
         html: verifiedTemplate({ ...payload, dashboardUrl: frontendUrl }),
       };
 
-    // Use this for "createReviewWithTasks" instead of "REJECTED"
     case "AMENDMENT_REQUIRED":
       return {
         subject: `[IRAAP] Feedback & Amendments: ${payload.projectName}`,
         html: amendmentTemplate({ ...payload, dashboardUrl: frontendUrl }),
       };
+
     case "USER_REGISTERED":
       return {
         subject: `[IRAAP] Welcome ${payload.fullName}`,
-        html: registeredTemplate({
-          ...payload,
-          dashboardUrl: frontendUrl,
-        }),
+        html: registeredTemplate({ ...payload, dashboardUrl: frontendUrl }),
       };
 
     default:

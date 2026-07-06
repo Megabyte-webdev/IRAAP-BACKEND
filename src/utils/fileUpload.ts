@@ -6,7 +6,8 @@ export async function uploadToCloudinary(fileBuffer: Buffer) {
     const stream = cloudinary.uploader.upload_stream(
       {
         folder: "research_projects",
-        resource_type: "raw", // IMPORTANT: Use "raw" for PDFs to prevent transcoding
+        resource_type: "image",
+        format: "pdf",
       },
       (error, result: any) => {
         if (error) return reject(error);
@@ -16,7 +17,7 @@ export async function uploadToCloudinary(fileBuffer: Buffer) {
         });
       },
     );
-    // Directly end the stream with the buffer
+
     stream.end(fileBuffer);
   });
 }

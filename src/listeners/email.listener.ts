@@ -52,6 +52,8 @@ eventBus.on(Events.TASK_SUBMITTED, async (data: any) => {
       studentName: data.studentName,
       projectName: data.projectName,
       taskTitle: data.taskTitle,
+      remainingCount: data.remainingCount,
+      isRoundFinished: data.isRoundFinished,
     },
     sender,
   );
