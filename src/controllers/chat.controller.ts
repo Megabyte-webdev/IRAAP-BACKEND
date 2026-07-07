@@ -3,6 +3,7 @@ import { and, desc, eq, lt, or, ne, sql } from "drizzle-orm";
 import { db } from "../config/db.js";
 import { conversations, messages, users } from "../database/schema.js";
 import { withPagination } from "../utils/pagination.js";
+import { buildMsgsDTO } from "../utils/helper.js";
 
 export async function getConversations(req: Request, res: Response) {
   const userId = req.user!.id;
@@ -263,8 +264,12 @@ export async function getMessages(
 
   msgs.reverse();
 
+  const formattedMessages = msgs.map((message) =>
+    buildMsgsDTO(message, message.replyTo),
+  );
+
   return res.json({
-    data: msgs,
+    data: formattedMessages,
     conversationId: convo.id,
     pagination: {
       hasMore,
