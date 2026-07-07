@@ -4,7 +4,7 @@ import type { ClientMessage } from "../utils/types/websocket.js";
 import { conversations, messages, users } from "../database/schema.js";
 import { clients } from "../services/ws.js";
 import { db } from "../config/db.js";
-import { buildMessageDTO } from "../utils/helper.js";
+import { buildMsgsDTO } from "../utils/helper.js";
 import { sendPushNotification } from "../utils/pusher.js";
 import { execute, safeSend, sendWsError } from "../utils/ws-response.js";
 import { createMeeting } from "../services/meetingsdk.js";
@@ -145,6 +145,12 @@ async function handleChatSend(
       msgType,
       meetingId,
       meetingUrl,
+      scheduledAt:
+        msgType === "CALL_INVITE" && msg.metadata?.scheduledAt
+          ? new Date(msg.metadata.scheduledAt)
+          : null,
+      duration:
+        msgType === "CALL_INVITE" ? (msg.metadata?.duration ?? null) : null,
       replyToMessageId: msg.replyToMessageId ?? null,
       status: "SENT",
     })
@@ -175,16 +181,7 @@ async function handleChatSend(
     })
     .where(eq(conversations.id, convo.id));
   const payload = {
-    ...buildMessageDTO(saved, reply),
-    metadata:
-      msgType === "CALL_INVITE"
-        ? {
-            scheduledAt: msg.metadata?.scheduledAt,
-            duration: msg.metadata?.duration,
-            meetingTitle: msg.metadata?.meetingTitle,
-            meetingUrl: meetingUrl,
-          }
-        : null,
+    ...buildMsgsDTO(saved, reply),
   };
 
   // sender acknowledgement
@@ -292,7 +289,6 @@ async function handleReadBulk(
     .set({ status: "READ", readAt: new Date() })
     .where(inArray(messages.id, ids));
 
-  // Notify the sender — include readerId so they know who read them
   const senderSocket = clients.get(msg.senderId);
   safeSend(senderSocket, {
     type: "chat:read:bulk",
@@ -339,8 +335,6 @@ export async function flushPendingMessages(ws: AuthedWebSocket) {
   const pending = await db.query.messages.findMany({
     where: and(
       inArray(messages.conversationId, convoIds),
-      // SENT = saved but never pushed to client
-      // DELIVERED = pushed but socket dropped before client confirmed receipt
       or(eq(messages.status, "SENT"), eq(messages.status, "DELIVERED")),
     ),
     with: {
@@ -361,7 +355,7 @@ export async function flushPendingMessages(ws: AuthedWebSocket) {
   // Push all missed messages in one frame
   safeSend(ws, {
     type: "chat:messages:bulk",
-    payload: toDeliver.map((m) => buildMessageDTO(m, m.replyTo)),
+    payload: toDeliver.map((m) => buildMsgsDTO(m, m.replyTo)),
   });
 
   const ids = toDeliver.map((m) => m.id);

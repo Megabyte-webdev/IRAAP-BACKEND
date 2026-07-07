@@ -95,6 +95,38 @@ export async function getChatableUsers(req: Request, res: Response) {
   const page = Number(req.query.page) || 1;
   const limit = Math.min(Number(req.query.limit) || 20, 50);
 
+  const currentUser = await db.query.users.findFirst({
+    where: eq(users.id, userId),
+    columns: {
+      supervisorId: true,
+      role: true,
+    },
+  });
+  let whereClause;
+
+  if (role === "SUPERVISOR") {
+    // Students under me + other supervisors
+    whereClause = and(
+      ne(users.id, userId),
+      or(
+        eq(users.supervisorId, userId),
+        and(eq(users.role, "SUPERVISOR"), ne(users.id, userId)),
+      ),
+    );
+  } else {
+    // My supervisor + students sharing my supervisor
+    whereClause = and(
+      ne(users.id, userId),
+      or(
+        eq(users.id, currentUser!.supervisorId!),
+        and(
+          eq(users.supervisorId, currentUser!.supervisorId!),
+          eq(users.role, "STUDENT"),
+        ),
+      ),
+    );
+  }
+
   // Existing conversations
   const existingConvos = await db.query.conversations.findMany({
     where: or(
@@ -122,20 +154,14 @@ export async function getChatableUsers(req: Request, res: Response) {
 
     dataQuery: (limit, offset) =>
       db.query.users.findMany({
-        where: and(
-          ne(users.id, userId),
-          or(eq(users.supervisorId, userId), eq(users.role, "SUPERVISOR")),
-        ),
-
+        where: whereClause,
         columns: {
           id: true,
           fullName: true,
           email: true,
           role: true,
         },
-
         orderBy: [users.fullName],
-
         limit,
         offset,
       }),
@@ -145,12 +171,7 @@ export async function getChatableUsers(req: Request, res: Response) {
         count: sql<number>`count(*)`,
       })
       .from(users)
-      .where(
-        and(
-          ne(users.id, userId),
-          or(eq(users.supervisorId, userId), eq(users.role, "SUPERVISOR")),
-        ),
-      ),
+      .where(whereClause),
   });
 
   const usersWithConversation = result.data.map((u) => ({

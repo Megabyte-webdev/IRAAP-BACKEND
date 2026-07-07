@@ -280,8 +280,13 @@ export const messages = pgTable(
     meetingId: varchar("meetingId", {
       length: 255,
     }),
-
     meetingUrl: text("meetingUrl"),
+    scheduledAt: timestamp("scheduled_at", {
+      withTimezone: true,
+      mode: "date",
+    }),
+
+    duration: integer("duration"),
     readAt: timestamp("read_at"),
     createdAt: timestamp("created_at").defaultNow(),
     status: messageStatusEnum("status").default("SENT").notNull(),
