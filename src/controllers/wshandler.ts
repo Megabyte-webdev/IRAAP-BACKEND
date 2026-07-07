@@ -62,10 +62,10 @@ async function handleChatSend(
     return sendWsError(ws, "RECIPIENT_NOT_FOUND", "Recipient does not exist.");
   }
   const content = msg.content?.trim() ?? "";
-  const messageType = msg.metadata?.messageType ?? "TEXT";
+  const msgType = msg.metadata?.msgType ?? "TEXT";
 
   // Text messages require content
-  if (messageType === "TEXT" && !content) {
+  if (msgType === "TEXT" && !content) {
     return sendWsError(ws, "EMPTY_MESSAGE", "Message cannot be empty.");
   }
 
@@ -105,7 +105,7 @@ async function handleChatSend(
   let meetingId: null | string = null;
   let meetingUrl: null | string = null;
 
-  if (messageType === "CALL_INVITE") {
+  if (msgType === "CALL_INVITE") {
     if (ws.userRole !== "SUPERVISOR") {
       return sendWsError(
         ws,
@@ -129,7 +129,7 @@ async function handleChatSend(
       conversationId: convo.id,
       senderId: ws.userId,
       content,
-      messageType,
+      msgType,
       meetingId,
       meetingUrl,
       replyToMessageId: msg.replyToMessageId ?? null,
@@ -164,7 +164,7 @@ async function handleChatSend(
   const payload = {
     ...buildMessageDTO(saved, reply),
     metadata:
-      messageType === "CALL_INVITE"
+      msgType === "CALL_INVITE"
         ? {
             scheduledAt: msg.metadata?.scheduledAt,
             duration: msg.metadata?.duration,
