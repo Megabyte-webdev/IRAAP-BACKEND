@@ -117,10 +117,11 @@ async function handleChatSend(
     const meeting = await createMeeting({
       title: msg.metadata?.meetingTitle ?? `Meeting with ${recipient.fullName}`,
       createdBy: String(ws.userId),
+      isOpen: msg.metadata?.isOpen ?? true,
     });
 
-    meetingId = meeting.meetingId;
-    meetingUrl = meeting.joinUrl;
+    meetingId = meeting.id;
+    meetingUrl = `${process.env.MEETING_APP_URL}/${meetingId}`;
   }
 
   const [saved] = (await db
