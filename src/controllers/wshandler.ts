@@ -121,9 +121,10 @@ async function handleChatSend(
         createdBy: String(ws.userId),
         isOpen: msg.metadata?.isOpen ?? true,
       });
+      console.log("CREATE MEETING RESPONSE:", meeting);
 
-      meetingId = meeting.meeting_id;
-      meetingUrl = meeting.join_url;
+      meetingId = meeting.id;
+      meetingUrl = `${process.env.MEETING_APP_URL}/meetingId`;
     } catch (error) {
       console.error("Meeting service unavailable:", error);
 

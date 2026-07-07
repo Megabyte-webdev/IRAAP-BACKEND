@@ -34,9 +34,9 @@ export function buildMsgsDTO(message: any, reply: any = null) {
     sender: message.sender,
 
     metadata:
-      message.messageType === "CALL_INVITE"
+      message.msgType === "CALL_INVITE"
         ? {
-            messageType: message.messageType,
+            msgType: message.msgType,
             meetingId: message.meetingId,
             meetingUrl: message.meetingUrl,
             scheduledAt: message.scheduledAt,
@@ -44,7 +44,7 @@ export function buildMsgsDTO(message: any, reply: any = null) {
             meetingTitle: message.meetingTitle,
           }
         : {
-            messageType: message.messageType,
+            msgType: message.msgType,
           },
 
     replyTo: reply,
