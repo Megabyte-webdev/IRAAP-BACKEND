@@ -114,14 +114,25 @@ async function handleChatSend(
       );
     }
 
-    const meeting = await createMeeting({
-      title: msg.metadata?.meetingTitle ?? `Meeting with ${recipient.fullName}`,
-      createdBy: String(ws.userId),
-      isOpen: msg.metadata?.isOpen ?? true,
-    });
+    try {
+      const meeting = await createMeeting({
+        title:
+          msg.metadata?.meetingTitle ?? `Meeting with ${recipient.fullName}`,
+        createdBy: String(ws.userId),
+        isOpen: msg.metadata?.isOpen ?? true,
+      });
 
-    meetingId = meeting.id;
-    meetingUrl = `${process.env.MEETING_APP_URL}/${meetingId}`;
+      meetingId = meeting.meeting_id;
+      meetingUrl = meeting.join_url;
+    } catch (error) {
+      console.error("Meeting service unavailable:", error);
+
+      return sendWsError(
+        ws,
+        "MEETING_SERVICE_UNAVAILABLE",
+        "Meeting service is currently unavailable.",
+      );
+    }
   }
 
   const [saved] = (await db

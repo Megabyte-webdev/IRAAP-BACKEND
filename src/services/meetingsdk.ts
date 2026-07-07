@@ -5,7 +5,7 @@ export async function createMeeting(data: {
   createdBy: string;
   isOpen: boolean;
 }) {
-  const response = await http.post(`${process.env.MEETINGSDK_SERVER}/rooms`, {
+  const response = await http.post("/rooms", {
     title: data.title,
     created_by: data.createdBy,
     is_open: data.isOpen,
