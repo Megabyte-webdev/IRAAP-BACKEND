@@ -6,7 +6,7 @@ export const meetingScheduledTemplate = (data: {
   meetingTitle: string;
   meetingUrl: string;
   scheduledAt: string;
-  duration?: string;
+  duration?: number;
   dashboardUrl: string;
   isSupervisorConfirmation?: boolean;
 }) => {
