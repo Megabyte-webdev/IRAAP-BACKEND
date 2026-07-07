@@ -7,6 +7,8 @@ import { registeredTemplate } from "./templates/userRegister.js";
 import { verifiedTemplate } from "./templates/verified.js";
 import { supervisorAssignedTemplate } from "./templates/supervisorAssigned.js";
 import { supervisorAllocationTemplate } from "./templates/supervisorAllocation.js";
+import { meetingScheduledTemplate } from "./templates/meetingScheduled.js";
+import { meetingReminderTemplate } from "./templates/meetingReminder.js";
 
 export const getEmailData = (type: string, payload: any) => {
   const frontendUrl = "https://iraap.com.ng";
@@ -75,6 +77,19 @@ export const getEmailData = (type: string, payload: any) => {
           ...payload,
           dashboardUrl: frontendUrl,
         }),
+      };
+    case "MEETING_SCHEDULED":
+      return {
+        subject: `[IRAAP] New Meeting Scheduled: ${payload.meetingTitle}`,
+        html: meetingScheduledTemplate({
+          ...payload,
+          dashboardUrl: frontendUrl,
+        }),
+      };
+    case "MEETING_REMINDER":
+      return {
+        subject: `[IRAAP] Reminder: Meeting in 1 hour - ${payload.meetingTitle}`,
+        html: meetingReminderTemplate(payload),
       };
 
     default:

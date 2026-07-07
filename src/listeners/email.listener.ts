@@ -1,7 +1,8 @@
 import { eventBus } from "../events/index.js";
 import { Events } from "../utils/email/email.types.js";
 import { getEmailData } from "../utils/email/engine.js";
-import { emailQueue } from "../queues/email.queue.js";
+import { emailQueue, meetingReminderQueue } from "../queues/email.queue.js";
+import { getReminderTimes } from "../utils/helper.js";
 
 const sendDirectEmail = async (
   type: string,
@@ -150,4 +151,64 @@ eventBus.on(Events.SUPERVISOR_ROSTER_UPDATED, async (data: any) => {
     },
     sender,
   );
+});
+
+// MEETING SCHEDULED
+eventBus.on(Events.MEETING_SCHEDULED, async (data: any) => {
+  console.log("Listener received", data);
+  const sender = data.senderType || "system";
+
+  await sendDirectEmail("MEETING_SCHEDULED", data.email, data, sender);
+
+  const scheduledDate = new Date(data.scheduledAt);
+
+  const reminderOffsets = getReminderTimes(scheduledDate);
+
+  for (const minutes of reminderOffsets) {
+    const reminderTime = scheduledDate.getTime() - minutes * 60 * 1000;
+
+    const delay = reminderTime - Date.now();
+
+    if (delay <= 0) {
+      continue;
+    }
+
+    // Student reminder
+    await meetingReminderQueue.add(
+      "reminder",
+      {
+        messageId: data.messageId,
+        email: data.email,
+        recipientName: data.recipientName,
+        supervisorName: data.supervisorName,
+        meetingTitle: data.meetingTitle,
+        meetingUrl: data.meetingUrl,
+        scheduledAt: data.scheduledAt,
+        reminderMinutes: minutes,
+      },
+      {
+        delay,
+        jobId: `meeting-${data.messageId}-student-${minutes}`,
+      },
+    );
+
+    // Supervisor reminder
+    await meetingReminderQueue.add(
+      "reminder",
+      {
+        messageId: data.messageId,
+        email: data.supervisorEmail || data.email,
+        recipientName: data.supervisorName,
+        supervisorName: data.supervisorName,
+        meetingTitle: data.meetingTitle,
+        meetingUrl: data.meetingUrl,
+        scheduledAt: data.scheduledAt,
+        reminderMinutes: minutes,
+      },
+      {
+        delay,
+        jobId: `meeting-${data.messageId}-supervisor-${minutes}`,
+      },
+    );
+  }
 });

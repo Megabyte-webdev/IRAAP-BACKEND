@@ -8,6 +8,8 @@ import { buildMsgsDTO } from "../utils/helper.js";
 import { sendPushNotification } from "../utils/pusher.js";
 import { execute, safeSend, sendWsError } from "../utils/ws-response.js";
 import { createMeeting } from "../services/meetingsdk.js";
+import { eventBus } from "../events/index.js";
+import { Events } from "../utils/email/email.types.js";
 
 export async function handleMessage(ws: AuthedWebSocket, raw: string) {
   let msg: ClientMessage;
@@ -124,7 +126,7 @@ async function handleChatSend(
       console.log("CREATE MEETING RESPONSE:", meeting);
 
       meetingId = meeting.id;
-      meetingUrl = `${process.env.MEETING_APP_URL}/meetingId`;
+      meetingUrl = `${process.env.MEETING_APP_URL}/${meetingId}`;
     } catch (error) {
       console.error("Meeting service unavailable:", error);
 
@@ -184,7 +186,6 @@ async function handleChatSend(
     ...buildMsgsDTO(saved, reply),
   };
 
-  // sender acknowledgement
   safeSend(ws, {
     type: "chat:message:sent",
     payload: {
@@ -217,6 +218,7 @@ async function handleChatSend(
         status: "DELIVERED",
       })
       .where(eq(messages.id, saved.id));
+
     safeSend(ws, {
       type: "chat:delivered",
       payload: {
@@ -225,6 +227,37 @@ async function handleChatSend(
         deliveredTo: msg.recipientId,
       },
     });
+  }
+  if (msgType === "CALL_INVITE" && msg.metadata?.scheduledAt) {
+    try {
+      // Email to student
+      eventBus.emit(Events.MEETING_SCHEDULED, {
+        email: recipient.email,
+        recipientName: recipient.fullName,
+        supervisorName: ws.fullName,
+        meetingTitle: msg.metadata.meetingTitle ?? "Meeting",
+        scheduledAt: msg.metadata.scheduledAt,
+        duration: msg.metadata.duration,
+        meetingUrl: meetingUrl,
+        messageId: saved.id,
+      });
+
+      if (ws?.email) {
+        eventBus.emit(Events.MEETING_SCHEDULED, {
+          email: ws.email,
+          recipientName: ws.fullName,
+          supervisorName: ws.fullName,
+          meetingTitle: msg.metadata.meetingTitle ?? "Meeting",
+          scheduledAt: msg.metadata.scheduledAt,
+          duration: msg.metadata.duration,
+          meetingUrl: meetingUrl,
+          isSupervisorConfirmation: true,
+          messageId: saved.id,
+        });
+      }
+    } catch (error) {
+      console.warn("Failed to emit meeting scheduled event:", error);
+    }
   }
 }
 
@@ -236,16 +269,13 @@ async function handleRead(
   if (!ws.userId)
     return sendWsError(ws, "UNAUTHORIZED", "Authentication required.");
 
-  if (msg.senderId === ws.userId) return; // can't read your own message
+  if (msg.senderId === ws.userId) return;
 
   await db
     .update(messages)
     .set({ status: "READ", readAt: new Date() })
     .where(
-      and(
-        eq(messages.id, msg.messageId),
-        eq(messages.senderId, msg.senderId), // safety: ensure it really is from that sender
-      ),
+      and(eq(messages.id, msg.messageId), eq(messages.senderId, msg.senderId)),
     );
 
   // Tell the sender their message was read and by whom
@@ -315,7 +345,6 @@ async function handleTyping(
   });
 }
 
-// FLUSH PENDING MESSAGES  — call this right after a user connects.
 // Delivers every SENT message they missed while offline, then marks DELIVERED.
 export async function flushPendingMessages(ws: AuthedWebSocket) {
   if (!ws.userId)

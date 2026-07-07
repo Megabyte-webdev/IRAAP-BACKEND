@@ -39,4 +39,7 @@ export enum Events {
 
   SUPERVISOR_ASSIGNED = "supervisor.assigned",
   SUPERVISOR_ROSTER_UPDATED = "supervisor.roster.updated",
+
+  MEETING_SCHEDULED = "meeting.scheduled",
+  MEETING_REMINDER = "meeting.reminder",
 }

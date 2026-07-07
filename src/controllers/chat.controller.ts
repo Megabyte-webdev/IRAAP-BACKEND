@@ -3,7 +3,7 @@ import { and, desc, eq, lt, or, ne, sql } from "drizzle-orm";
 import { db } from "../config/db.js";
 import { conversations, messages, users } from "../database/schema.js";
 import { withPagination } from "../utils/pagination.js";
-import { buildMsgsDTO } from "../utils/helper.js";
+import { buildMessagePreviewDTO, buildMsgsDTO } from "../utils/helper.js";
 
 export async function getConversations(req: Request, res: Response) {
   const userId = req.user!.id;
@@ -48,6 +48,11 @@ export async function getConversations(req: Request, res: Response) {
               status: true,
               senderId: true,
               createdAt: true,
+              msgType: true,
+              meetingId: true,
+              meetingUrl: true,
+              scheduledAt: true,
+              duration: true,
             },
           },
         },
@@ -79,7 +84,9 @@ export async function getConversations(req: Request, res: Response) {
         ? conversation.student
         : conversation.supervisor,
 
-    lastMessage: conversation.lastMessage,
+    lastMessage: conversation.lastMessage
+      ? buildMessagePreviewDTO(conversation.lastMessage)
+      : null,
 
     updatedAt: conversation.updatedAt,
   }));

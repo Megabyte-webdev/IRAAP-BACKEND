@@ -12,3 +12,14 @@ export const emailQueue = new Queue("send-email", {
     },
   },
 });
+
+export const meetingReminderQueue = new Queue("meeting-reminder", {
+  connection: redisConnection,
+  defaultJobOptions: {
+    attempts: 3,
+    backoff: {
+      type: "exponential",
+      delay: 5000,
+    },
+  },
+});

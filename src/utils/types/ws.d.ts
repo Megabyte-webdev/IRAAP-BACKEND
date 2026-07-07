@@ -15,4 +15,5 @@ export interface AuthedWebSocket extends WebSocket {
   userId?: number;
   userRole?: "STUDENT" | "SUPERVISOR" | "ADMIN";
   fullName: string;
+  email: string;
 }
