@@ -6,26 +6,42 @@ import { clients } from "../services/ws.js";
 import { db } from "../config/db.js";
 import { buildMessageDTO } from "../utils/helper.js";
 import { sendPushNotification } from "../utils/pusher.js";
+import { execute, safeSend, sendWsError } from "../utils/ws-response.js";
+import { createMeeting } from "../services/meetingsdk.js";
 
 export async function handleMessage(ws: AuthedWebSocket, raw: string) {
+  let msg: ClientMessage;
   try {
-    const msg: ClientMessage = JSON.parse(raw);
+    msg = JSON.parse(raw);
+  } catch {
+    return sendWsError(ws, "INVALID_JSON", "Malformed websocket payload.");
+  }
 
-    switch (msg.type) {
-      case "chat:send":
-        return handleChatSend(ws, msg);
+  switch (msg.type) {
+    case "ping":
+      return safeSend(ws, {
+        type: "pong",
+        timestamp: new Date().toISOString(),
+      });
 
-      case "chat:read":
-        return handleRead(ws, msg);
+    case "chat:send":
+      return execute(ws, "chat:send", () => handleChatSend(ws, msg));
 
-      case "chat:read:bulk":
-        return handleReadBulk(ws, msg);
+    case "chat:read":
+      return execute(ws, "chat:read", () => handleRead(ws, msg));
 
-      case "chat:typing":
-        return handleTyping(ws, msg);
-    }
-  } catch (err) {
-    console.error("Invalid WS message:", err);
+    case "chat:read:bulk":
+      return execute(ws, "chat:read:bulk", () => handleReadBulk(ws, msg));
+
+    case "chat:typing":
+      return execute(ws, "chat:typing", () => handleTyping(ws, msg));
+
+    default:
+      return sendWsError(
+        ws,
+        "UNKNOWN_EVENT",
+        `Unsupported event type: ${(msg as any).type}`,
+      );
   }
 }
 
@@ -34,12 +50,32 @@ async function handleChatSend(
   ws: AuthedWebSocket,
   msg: Extract<ClientMessage, { type: "chat:send" }>,
 ) {
-  if (!ws.userId) return;
+  if (!ws.userId) {
+    return sendWsError(ws, "UNAUTHORIZED", "Authentication required.");
+  }
 
   const recipient = await db.query.users.findFirst({
     where: eq(users.id, msg.recipientId),
   });
-  if (!recipient) return;
+
+  if (!recipient) {
+    return sendWsError(ws, "RECIPIENT_NOT_FOUND", "Recipient does not exist.");
+  }
+  const content = msg.content?.trim() ?? "";
+  const messageType = msg.metadata?.messageType ?? "TEXT";
+
+  // Text messages require content
+  if (messageType === "TEXT" && !content) {
+    return sendWsError(ws, "EMPTY_MESSAGE", "Message cannot be empty.");
+  }
+
+  if (content.length > 5000) {
+    return sendWsError(
+      ws,
+      "MESSAGE_TOO_LONG",
+      "Message exceeds maximum length.",
+    );
+  }
 
   let convo = await db.query.conversations.findFirst({
     where: or(
@@ -66,19 +102,41 @@ async function handleChatSend(
       .then((r) => r[0]);
   }
 
-  // INSERT ONLY (no re-query)
+  let meetingId: null | string = null;
+  let meetingUrl: null | string = null;
+
+  if (messageType === "CALL_INVITE") {
+    if (ws.userRole !== "SUPERVISOR") {
+      return sendWsError(
+        ws,
+        "FORBIDDEN",
+        "Only supervisors can schedule meetings.",
+      );
+    }
+
+    const meeting = await createMeeting({
+      title: msg.metadata?.meetingTitle ?? `Meeting with ${recipient.fullName}`,
+      createdBy: String(ws.userId),
+    });
+
+    meetingId = meeting.meetingId;
+    meetingUrl = meeting.joinUrl;
+  }
+
   const [saved] = (await db
     .insert(messages)
     .values({
       conversationId: convo.id,
       senderId: ws.userId,
-      content: msg.content,
+      content,
+      messageType,
+      meetingId,
+      meetingUrl,
       replyToMessageId: msg.replyToMessageId ?? null,
       status: "SENT",
     })
     .returning()) as any;
 
-  // CONDITIONAL reply fetch (only if needed)
   let reply = null;
 
   if (msg.replyToMessageId) {
@@ -91,58 +149,72 @@ async function handleChatSend(
         createdAt: true,
       },
     });
+    if (!reply) {
+      return sendWsError(ws, "INVALID_REPLY", "Reply message not found.");
+    }
   }
-
   await db
     .update(conversations)
-    .set({ lastMessageId: saved.id, updatedAt: new Date() })
+    .set({
+      lastMessageId: saved.id,
+
+      updatedAt: new Date(),
+    })
     .where(eq(conversations.id, convo.id));
+  const payload = {
+    ...buildMessageDTO(saved, reply),
+    metadata:
+      messageType === "CALL_INVITE"
+        ? {
+            scheduledAt: msg.metadata?.scheduledAt,
+            duration: msg.metadata?.duration,
+            meetingTitle: msg.metadata?.meetingTitle,
+            meetingUrl: meetingUrl,
+          }
+        : null,
+  };
 
-  const payload = buildMessageDTO(saved, reply);
-
-  // ACK sender
-  ws.send(
-    JSON.stringify({
-      type: "chat:message:sent",
-      payload: { ...payload, clientId: msg.clientId },
-    }),
-  );
-
+  // sender acknowledgement
+  safeSend(ws, {
+    type: "chat:message:sent",
+    payload: {
+      ...payload,
+      clientId: msg.clientId,
+    },
+  });
   const recipientSocket = clients.get(msg.recipientId);
-  const recipientRole = recipientSocket?.userRole;
 
   if (recipientSocket) {
-    recipientSocket.send(
-      JSON.stringify({
-        type: "chat:message",
-        payload,
-      }),
-    );
-
-    await sendPushNotification({
-      senderId: payload.senderId,
-      receiverId: msg.recipientId,
-      senderName: ws.fullName,
-      message: msg.content,
-      avatar: null,
-      role: recipientRole?.toLocaleLowerCase(),
+    safeSend(recipientSocket, {
+      type: "chat:message",
+      payload,
     });
-
+    try {
+      await sendPushNotification({
+        senderId: payload.senderId,
+        receiverId: msg.recipientId,
+        senderName: ws.fullName,
+        message: content,
+        avatar: null,
+        role: recipientSocket.userRole?.toLowerCase(),
+      });
+    } catch (error) {
+      console.warn(error);
+    }
     await db
       .update(messages)
-      .set({ status: "DELIVERED" })
+      .set({
+        status: "DELIVERED",
+      })
       .where(eq(messages.id, saved.id));
-
-    ws.send(
-      JSON.stringify({
-        type: "chat:delivered",
-        payload: {
-          messageId: saved.id,
-          conversationId: convo.id,
-          deliveredTo: msg.recipientId,
-        },
-      }),
-    );
+    safeSend(ws, {
+      type: "chat:delivered",
+      payload: {
+        messageId: saved.id,
+        conversationId: convo.id,
+        deliveredTo: msg.recipientId,
+      },
+    });
   }
 }
 
@@ -151,9 +223,9 @@ async function handleRead(
   ws: AuthedWebSocket,
   msg: Extract<ClientMessage, { type: "chat:read" }>,
 ) {
-  if (!ws.userId) return;
+  if (!ws.userId)
+    return sendWsError(ws, "UNAUTHORIZED", "Authentication required.");
 
-  // Client tells us who sent the message — no DB lookup needed
   if (msg.senderId === ws.userId) return; // can't read your own message
 
   await db
@@ -168,24 +240,22 @@ async function handleRead(
 
   // Tell the sender their message was read and by whom
   const senderSocket = clients.get(msg.senderId);
-  senderSocket?.send(
-    JSON.stringify({
-      type: "chat:read",
-      payload: {
-        messageId: msg.messageId,
-        readerId: ws.userId, // ← who read it
-      },
-    }),
-  );
+  safeSend(senderSocket, {
+    type: "chat:read",
+    payload: {
+      messageId: msg.messageId,
+      readerId: ws.userId,
+    },
+  });
 }
 
-// ─── READ BULK ───────────────────────────────────────────────────────────────
-
+// READ BULK
 async function handleReadBulk(
   ws: AuthedWebSocket,
   msg: Extract<ClientMessage, { type: "chat:read:bulk" }>,
 ) {
-  if (!ws.userId) return;
+  if (!ws.userId)
+    return sendWsError(ws, "UNAUTHORIZED", "Authentication required.");
   if (msg.senderId === ws.userId) return; // sanity guard
 
   // Only mark messages from the specified sender in this conversation
@@ -211,16 +281,14 @@ async function handleReadBulk(
 
   // Notify the sender — include readerId so they know who read them
   const senderSocket = clients.get(msg.senderId);
-  senderSocket?.send(
-    JSON.stringify({
-      type: "chat:read:bulk",
-      payload: {
-        conversationId: msg.conversationId,
-        messageIds: ids,
-        readerId: ws.userId, // ← who read them
-      },
-    }),
-  );
+  safeSend(senderSocket, {
+    type: "chat:read:bulk",
+    payload: {
+      conversationId: msg.conversationId,
+      messageIds: ids,
+      readerId: ws.userId,
+    },
+  });
 }
 
 // TYPING INDICATOR
@@ -228,21 +296,21 @@ async function handleTyping(
   ws: AuthedWebSocket,
   msg: Extract<ClientMessage, { type: "chat:typing" }>,
 ) {
-  if (!ws.userId) return;
+  if (!ws.userId)
+    return sendWsError(ws, "UNAUTHORIZED", "Authentication required.");
 
   const recipientSocket = clients.get(msg.recipientId);
-  recipientSocket?.send(
-    JSON.stringify({
-      type: "chat:typing",
-      payload: { senderId: ws.userId, isTyping: msg.isTyping },
-    }),
-  );
+  safeSend(recipientSocket, {
+    type: "chat:typing",
+    payload: { senderId: ws.userId, isTyping: msg.isTyping },
+  });
 }
 
 // FLUSH PENDING MESSAGES  — call this right after a user connects.
 // Delivers every SENT message they missed while offline, then marks DELIVERED.
 export async function flushPendingMessages(ws: AuthedWebSocket) {
-  if (!ws.userId) return;
+  if (!ws.userId)
+    return sendWsError(ws, "UNAUTHORIZED", "Authentication required.");
 
   const userConvos = await db.query.conversations.findMany({
     where: or(
@@ -278,12 +346,10 @@ export async function flushPendingMessages(ws: AuthedWebSocket) {
   if (toDeliver.length === 0) return;
 
   // Push all missed messages in one frame
-  ws.send(
-    JSON.stringify({
-      type: "chat:messages:bulk",
-      payload: toDeliver.map((m) => buildMessageDTO(m, m.replyTo)),
-    }),
-  );
+  safeSend(ws, {
+    type: "chat:messages:bulk",
+    payload: toDeliver.map((m) => buildMessageDTO(m, m.replyTo)),
+  });
 
   const ids = toDeliver.map((m) => m.id);
 
@@ -302,11 +368,9 @@ export async function flushPendingMessages(ws: AuthedWebSocket) {
     const socket = clients.get(Number(senderId));
     if (!socket) continue;
 
-    socket.send(
-      JSON.stringify({
-        type: "chat:delivered:bulk",
-        messageIds,
-      }),
-    );
+    safeSend(socket, {
+      type: "chat:delivered:bulk",
+      messageIds,
+    });
   }
 }

@@ -6,20 +6,22 @@ import * as schema from "../database/schema.js";
 dotenv.config();
 
 const pool = new Pool({
-  connectionString:
-    process.env.DATABASE_URL_UNPOOLED || process.env.DATABASE_URL,
+  connectionString: process.env.DATABASE_URL, //process.env.DATABASE_URL_UNPOOLED ||
   ssl: { rejectUnauthorized: false },
+  max: 5,
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 10000,
 });
 
 export async function testDbConnection() {
   try {
     const client = await pool.connect();
-    await client.query("SELECT NOW()"); // simple test query
+    await client.query("SELECT NOW()");
     client.release();
     console.log(" Database connected successfully");
   } catch (err) {
     console.error("Database connection failed:", err);
-    process.exit(1); // exit app if db is critical
+    process.exit(1);
   }
 }
 

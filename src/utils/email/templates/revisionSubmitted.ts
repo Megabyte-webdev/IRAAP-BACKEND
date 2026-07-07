@@ -59,7 +59,7 @@ export const revisionSubmittedTemplate = (data: {
     </p>
 
     <div style="text-align: center; margin-top: 28px; padding-bottom: 8px;">
-      <a href="${data.dashboardUrl}/supervisor/projects" style="background-color: #0ea5e9; color: #ffffff; padding: 12px 28px; border-radius: 6px; font-size: 14px; font-weight: 600; text-decoration: none; display: inline-block;">
+      <a href="${data.dashboardUrl}/supervisor/projects" target="_blank" rel="noopener noreferrer" style="background-color: #0ea5e9; color: #ffffff; padding: 12px 28px; border-radius: 6px; font-size: 14px; font-weight: 600; text-decoration: none; display: inline-block;">
         Review New Version
       </a>
     </div>

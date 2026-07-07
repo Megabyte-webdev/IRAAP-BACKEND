@@ -5,6 +5,8 @@ import { revisionSubmittedTemplate } from "./templates/revisionSubmitted.js";
 import { taskSubmissionTemplate } from "./templates/taskSubmission.js";
 import { registeredTemplate } from "./templates/userRegister.js";
 import { verifiedTemplate } from "./templates/verified.js";
+import { supervisorAssignedTemplate } from "./templates/supervisorAssigned.js";
+import { supervisorAllocationTemplate } from "./templates/supervisorAllocation.js";
 
 export const getEmailData = (type: string, payload: any) => {
   const frontendUrl = "https://iraap.com.ng";
@@ -55,6 +57,24 @@ export const getEmailData = (type: string, payload: any) => {
       return {
         subject: `[IRAAP] Welcome ${payload.fullName}`,
         html: registeredTemplate({ ...payload, dashboardUrl: frontendUrl }),
+      };
+
+    case "SUPERVISOR_ASSIGNED":
+      return {
+        subject: `[IRAAP] Supervisor Assigned`,
+        html: supervisorAssignedTemplate({
+          ...payload,
+          dashboardUrl: frontendUrl,
+        }),
+      };
+
+    case "SUPERVISOR_ROSTER_UPDATED":
+      return {
+        subject: `[IRAAP] Student Allocation Update`,
+        html: supervisorAllocationTemplate({
+          ...payload,
+          dashboardUrl: frontendUrl,
+        }),
       };
 
     default:

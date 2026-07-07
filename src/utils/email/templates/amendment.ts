@@ -87,7 +87,7 @@ export const amendmentTemplate = (data) => {
     </p>
 
     <div style="text-align: center; margin-bottom: 28px;">
-      <a href="${data.dashboardUrl}" 
+      <a href="${data.dashboardUrl}/login" target="_blank" rel="noopener noreferrer"
         style="
           background-color: #2563eb;
           color: #ffffff;

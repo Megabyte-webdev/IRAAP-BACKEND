@@ -2,76 +2,97 @@ import type { Request, Response } from "express";
 import { and, desc, eq, lt, or, ne, sql } from "drizzle-orm";
 import { db } from "../config/db.js";
 import { conversations, messages, users } from "../database/schema.js";
+import { withPagination } from "../utils/pagination.js";
 
 export async function getConversations(req: Request, res: Response) {
   const userId = req.user!.id;
 
-  const userConvos = await db.query.conversations.findMany({
-    where: or(
-      eq(conversations.supervisorId, userId),
-      eq(conversations.studentId, userId),
-    ),
-    with: {
-      supervisor: {
-        columns: { id: true, fullName: true, email: true, role: true },
-      },
-      student: {
-        columns: { id: true, fullName: true, email: true, role: true },
-      },
-      messages: {
-        orderBy: desc(messages.createdAt),
-        limit: 1,
-        columns: {
-          id: true,
-          content: true,
-          status: true,
-          senderId: true,
-          createdAt: true,
+  const page = Number(req.query.page) || 1;
+  const limit = Math.min(Number(req.query.limit) || 20, 50);
+
+  const result = await withPagination({
+    page,
+    limit,
+
+    dataQuery: (limit, offset) =>
+      db.query.conversations.findMany({
+        where: or(
+          eq(conversations.supervisorId, userId),
+          eq(conversations.studentId, userId),
+        ),
+
+        with: {
+          supervisor: {
+            columns: {
+              id: true,
+              fullName: true,
+              email: true,
+              role: true,
+            },
+          },
+
+          student: {
+            columns: {
+              id: true,
+              fullName: true,
+              email: true,
+              role: true,
+            },
+          },
+
+          lastMessage: {
+            columns: {
+              id: true,
+              content: true,
+              status: true,
+              senderId: true,
+              createdAt: true,
+            },
+          },
         },
-      },
-    },
-    orderBy: desc(conversations.updatedAt),
-  });
 
-  // Get unread counts in one query — messages sent by someone else that aren't READ
-  const unreadCounts = await db
-    .select({
-      conversationId: messages.conversationId,
-      count: sql<number>`cast(count(*) as int)`,
-    })
-    .from(messages)
-    .where(
-      and(
-        or(...userConvos.map((c) => eq(messages.conversationId, c.id))),
-        ne(messages.senderId, userId),
-        ne(messages.status, "READ"),
+        orderBy: desc(conversations.updatedAt),
+
+        limit,
+        offset,
+      }),
+
+    countQuery: db
+      .select({
+        count: sql<number>`count(*)`,
+      })
+      .from(conversations)
+      .where(
+        or(
+          eq(conversations.supervisorId, userId),
+          eq(conversations.studentId, userId),
+        ),
       ),
-    )
-    .groupBy(messages.conversationId);
-
-  const unreadMap = Object.fromEntries(
-    unreadCounts.map((r) => [r.conversationId, r.count]),
-  );
-
-  const result = userConvos.map((convo) => {
-    // The "other" participant from the current user's perspective
-    const participant =
-      convo.supervisorId === userId ? convo.student : convo.supervisor;
-
-    return {
-      id: convo.id,
-      participant,
-      lastMessage: convo.messages[0] ?? null,
-      unreadCount: unreadMap[convo.id] ?? 0,
-      updatedAt: convo.updatedAt,
-    };
   });
 
-  return res.json({ data: result });
+  const conversationsList = result.data.map((conversation) => ({
+    id: conversation.id,
+
+    participant:
+      conversation.supervisorId === userId
+        ? conversation.student
+        : conversation.supervisor,
+
+    lastMessage: conversation.lastMessage,
+
+    updatedAt: conversation.updatedAt,
+  }));
+
+  return res.json({
+    data: conversationsList,
+    pagination: result.pagination,
+  });
 }
 
 export async function getChatableUsers(req: Request, res: Response) {
   const { id: userId, role } = req.user!;
+  const page = Number(req.query.page) || 1;
+  const limit = Math.min(Number(req.query.limit) || 20, 50);
 
   // Existing conversations
   const existingConvos = await db.query.conversations.findMany({
@@ -94,72 +115,52 @@ export async function getChatableUsers(req: Request, res: Response) {
     convoByPartner.set(partnerId, c.id);
   }
 
-  let chatableUsers: any[] = [];
+  const result = await withPagination({
+    page,
+    limit,
 
-  if (role === "STUDENT") {
-    const me = await db.query.users.findFirst({
-      where: eq(users.id, userId),
-      columns: {
-        supervisorId: true,
-      },
-    });
+    dataQuery: (limit, offset) =>
+      db.query.users.findMany({
+        where: and(
+          ne(users.id, userId),
+          or(eq(users.supervisorId, userId), eq(users.role, "SUPERVISOR")),
+        ),
 
-    if (!me?.supervisorId) {
-      return res.json({ data: [] });
-    }
+        columns: {
+          id: true,
+          fullName: true,
+          email: true,
+          role: true,
+        },
 
-    chatableUsers = await db.query.users.findMany({
-      where: and(
-        ne(users.id, userId),
-        or(
-          // my supervisor
-          eq(users.id, me.supervisorId),
+        orderBy: [users.fullName],
 
-          // students under same supervisor
-          and(
-            eq(users.role, "STUDENT"),
-            eq(users.supervisorId, me.supervisorId),
-          ),
+        limit,
+        offset,
+      }),
+
+    countQuery: db
+      .select({
+        count: sql<number>`count(*)`,
+      })
+      .from(users)
+      .where(
+        and(
+          ne(users.id, userId),
+          or(eq(users.supervisorId, userId), eq(users.role, "SUPERVISOR")),
         ),
       ),
-      columns: {
-        id: true,
-        fullName: true,
-        email: true,
-        role: true,
-      },
-      orderBy: [users.fullName],
-    });
-  }
+  });
 
-  if (role === "SUPERVISOR") {
-    chatableUsers = await db.query.users.findMany({
-      where: and(
-        ne(users.id, userId),
-        or(
-          // my students
-          eq(users.supervisorId, userId),
-
-          // other supervisors
-          eq(users.role, "SUPERVISOR"),
-        ),
-      ),
-      columns: {
-        id: true,
-        fullName: true,
-        email: true,
-        role: true,
-      },
-      orderBy: [users.fullName],
-    });
-  }
-
-  const result = chatableUsers.map((u) => ({
+  const usersWithConversation = result.data.map((u) => ({
     ...u,
     conversationId: convoByPartner.get(u.id) ?? null,
   }));
 
-  return res.json({ data: result });
+  return res.json({
+    data: usersWithConversation,
+    pagination: result.pagination,
+  });
 }
 
 export async function getChatUserById(
@@ -181,14 +182,6 @@ export async function getChatUserById(
   return res.json({ data: user });
 }
 
-// GET /chat/conversations/:conversationId/messages
-// Paginated message history for an open conversation.
-// Uses cursor-based pagination (before=messageId) so new messages
-// don't shift pages as the user scrolls up — same as WhatsApp/Telegram.
-//
-// Query params:
-//   limit  — how many messages to return (default 30, max 50)
-//   before — message id cursor; returns messages older than this id
 export async function getMessages(
   req: Request<{ userId: string }>,
   res: Response,
@@ -221,8 +214,6 @@ export async function getMessages(
     ),
   });
 
-  // No conversation yet — return empty state, not an error
-  // The first message sent via WS will create it
   if (!convo) {
     return res.json({
       data: [],
@@ -263,12 +254,10 @@ export async function getMessages(
   const hasMore = msgs.length > limit;
   if (hasMore) msgs.pop();
 
-  // Chronological order — oldest first for rendering
   msgs.reverse();
 
   return res.json({
     data: msgs,
-    // Surface the conversationId so the client can use it for chat:read:bulk
     conversationId: convo.id,
     pagination: {
       hasMore,

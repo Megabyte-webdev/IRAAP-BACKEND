@@ -1,30 +1,24 @@
-import { sql, Subquery } from "drizzle-orm";
-import type { PgSelect } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 
-interface PaginationParams {
-  page: number;
-  limit: number;
-}
-
-export const withPagination = async <T extends PgSelect>({
+export const withPagination = async <T>({
   dataQuery,
   countQuery,
   page,
   limit,
 }: {
-  dataQuery: any;
-  countQuery: any;
+  dataQuery: (limit: number, offset: number) => Promise<T[]>;
+  countQuery: Promise<any>;
   page: number;
   limit: number;
 }) => {
   const offset = (page - 1) * limit;
 
-  // Fast count query
-  const countResult = await countQuery;
-  const total = Number(countResult[0]?.count || 0);
+  const [data, countResult] = await Promise.all([
+    dataQuery(limit, offset),
+    countQuery,
+  ]);
 
-  // Paginated data query
-  const data = await (dataQuery as any).limit(limit).offset(offset);
+  const total = Number(countResult[0]?.count || 0);
 
   return {
     data,

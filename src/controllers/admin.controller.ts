@@ -60,7 +60,7 @@ export const getAdminDashboard = async (req: Request, res: Response) => {
   }
 };
 
-//assign supervisor to students in bulk
+// assign supervisor to students in bulk
 export const bulkAssignSupervisor = async (req: Request, res: Response) => {
   const validation = bulkAssignSchema.safeParse(req.body);
 
@@ -72,8 +72,23 @@ export const bulkAssignSupervisor = async (req: Request, res: Response) => {
   }
 
   const { supervisorId, studentIds } = req.body;
-  //txn
+
   try {
+    const supervisor = await db.query.users.findFirst({
+      where: eq(users.id, supervisorId),
+    });
+
+    if (!supervisor) {
+      return res
+        .status(440)
+        .json({ success: false, message: "Supervisor record not found" });
+    }
+
+    const targets = await db
+      .select({ fullName: users.fullName, email: users.email })
+      .from(users)
+      .where(inArray(users.id, studentIds));
+
     await db.transaction(async (tx) => {
       await tx
         .update(users)
@@ -84,6 +99,21 @@ export const bulkAssignSupervisor = async (req: Request, res: Response) => {
         `Assigned ${studentIds.length} students to Supervisor #${supervisorId}`,
       );
     });
+
+    targets.forEach((student) => {
+      eventBus.emit(Events.SUPERVISOR_ASSIGNED, {
+        studentName: student.fullName,
+        studentEmail: student.email,
+        supervisorName: supervisor.fullName,
+      });
+    });
+    const studentNamesList = targets.map((s) => s.fullName);
+    eventBus.emit(Events.SUPERVISOR_ROSTER_UPDATED, {
+      supervisorName: supervisor.fullName,
+      supervisorEmail: supervisor.email,
+      students: studentNamesList,
+    });
+
     res
       .status(200)
       .json({ message: "Supervisor assigned to students successfully" });
@@ -270,7 +300,6 @@ export const getUnassignedStudents = async (req: Request, res: Response) => {
     res.status(500).json({ success: false, message: "Internal Server Error" });
   }
 };
-
 export const getStudents = async (req: Request, res: Response) => {
   const page = Math.max(1, Number(req.query.page) || 1);
   const limit = Math.min(50, Number(req.query.limit) || 10);
@@ -279,7 +308,9 @@ export const getStudents = async (req: Request, res: Response) => {
     const supervisorAlias = alias(users, "supervisor");
 
     const countQuery = db
-      .select({ count: sql<number>`count(*)` })
+      .select({
+        count: sql<number>`count(*)`,
+      })
       .from(users)
       .where(eq(users.role, "STUDENT"));
 
@@ -292,34 +323,53 @@ export const getStudents = async (req: Request, res: Response) => {
       .orderBy(projects.studentId, desc(projects.createdAt))
       .as("lp");
 
-    const dataQuery = db
-      .select({
-        id: users.id,
-        fullName: users.fullName,
-        email: users.email,
-        supervisorName: supervisorAlias.fullName,
-        supervisorId: supervisorAlias.id,
-        projectStatus: latestProjects.status,
-      })
-      .from(users)
-      .leftJoin(
-        supervisorAlias as any,
-        eq(users.supervisorId, supervisorAlias.id),
-      )
-      .leftJoin(latestProjects, eq(users.id, latestProjects.studentId))
-      .where(eq(users.role, "STUDENT"))
-      .orderBy(desc(users.createdAt));
-
     const result = await withPagination({
-      countQuery,
-      dataQuery,
       page,
       limit,
+
+      countQuery,
+
+      dataQuery: (limit, offset) =>
+        db
+          .select({
+            id: users.id,
+            fullName: users.fullName,
+            email: users.email,
+
+            supervisorName: supervisorAlias.fullName,
+
+            supervisorId: supervisorAlias.id,
+
+            projectStatus: latestProjects.status,
+          })
+
+          .from(users)
+
+          .leftJoin(
+            supervisorAlias as any,
+            eq(users.supervisorId, supervisorAlias.id),
+          )
+
+          .leftJoin(latestProjects, eq(users.id, latestProjects.studentId))
+
+          .where(eq(users.role, "STUDENT"))
+
+          .orderBy(desc(users.createdAt))
+
+          .limit(limit)
+          .offset(offset),
     });
 
-    res.status(200).json({ success: true, ...result });
+    res.status(200).json({
+      success: true,
+      ...result,
+    });
   } catch (error) {
     console.error("Fetch Students Error:", error);
-    res.status(500).json({ success: false, message: "Internal Server Error" });
+
+    res.status(500).json({
+      success: false,
+      message: "Internal Server Error",
+    });
   }
 };

@@ -63,7 +63,7 @@ export const taskSubmittedTemplate = (data: {
     </div>
 
     <div style="text-align: center; margin-top: 28px; padding-bottom: 8px;">
-      <a href="${data.dashboardUrl}/supervisor" style="background-color: #4f46e5; color: #ffffff; padding: 12px 28px; border-radius: 6px; font-size: 14px; font-weight: 600; text-decoration: none; display: inline-block;">
+      <a href="${data.dashboardUrl}/supervisor" target="_blank" rel="noopener noreferrer" style="background-color: #4f46e5; color: #ffffff; padding: 12px 28px; border-radius: 6px; font-size: 14px; font-weight: 600; text-decoration: none; display: inline-block;">
         View Workspace Dashboard
       </a>
     </div>

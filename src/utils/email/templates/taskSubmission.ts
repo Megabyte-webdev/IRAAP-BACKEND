@@ -142,7 +142,7 @@ export const taskSubmissionTemplate = (data: {
     </p>
 
     <div style="text-align: center; margin-top: 28px;">
-      <a href="${data.dashboardUrl}/supervisor" 
+      <a href="${data.dashboardUrl}/supervisor" target="_blank" rel="noopener noreferrer" 
         style="
           background-color: #2563eb;
           color: #ffffff;

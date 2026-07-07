@@ -5,9 +5,11 @@ import {
   reviews,
   reviewTasks,
   statusEnum,
+  users,
 } from "../database/schema.js";
-import { and, eq, not, sql } from "drizzle-orm";
+import { and, eq, not, desc, sql } from "drizzle-orm";
 
+// 1. Fetching Stats (Unchanged - Count aggregations match your current flow)
 export const getSupervisorStats = async (req: Request, res: Response) => {
   const supervisorId = Number((req as any).user.id);
 
@@ -27,8 +29,6 @@ export const getSupervisorStats = async (req: Request, res: Response) => {
         ),
       );
 
-    // 🔥 FIX: reviewerId may NOT be supervisorId conceptually,
-    // but keeping it minimal change:
     const totalReviews = await db
       .select({ count: sql<number>`count(*)` })
       .from(reviews)
@@ -50,44 +50,47 @@ export const getSupervisorStats = async (req: Request, res: Response) => {
   }
 };
 
+// 2. REFACTORED: Clean Drizzle Relational Fetch
 export const getSupervisorProjects = async (req: Request, res: Response) => {
   const supervisorId = Number((req as any).user.id);
 
   try {
-    const allProjects = await db
-      .select({
-        id: projects.id,
-        title: projects.title,
-        submissionYear: projects.submissionYear,
-        abstract: projects.abstract,
-        status: projects.status,
+    // Using Drizzle Relational API for nested entity hydration
+    const allProjects = await db.query.projects.findMany({
+      where: eq(projects.supervisorId, supervisorId),
+      with: {
+        student: {
+          columns: {
+            id: true,
+            fullName: true,
+          },
+        },
+        currentVersion: {
+          columns: {
+            fileUrl: true,
+          },
+        },
+      },
+    });
 
-        student: sql<string>`
-          (SELECT full_name FROM users WHERE id = ${projects.studentId})
-        `,
-        studentId: projects.studentId,
-        supervisorId: projects.supervisorId,
-
-        category: sql<string>`
-          (SELECT name FROM categories WHERE id = ${projects.categoryId})
-        `,
-
-        // NEW: derive file from version table
-        fileUrl: sql<string>`
-          (SELECT file_url 
-           FROM project_versions 
-           WHERE id = ${projects.currentVersionId})
-        `,
-
-        currentVersionId: projects.currentVersionId,
-        createdAt: projects.createdAt,
-      })
-      .from(projects)
-      .where(eq(projects.supervisorId, supervisorId));
+    // Remap to match your front-end shape requirements perfectly
+    const formattedProjects = allProjects.map((p) => ({
+      id: p.id,
+      title: p.title,
+      submissionYear: p.submissionYear,
+      abstract: p.abstract,
+      status: p.status,
+      studentId: p.studentId,
+      supervisorId: p.supervisorId,
+      student: p.student?.fullName || null,
+      fileUrl: p.currentVersion?.fileUrl || null,
+      currentVersionId: p.currentVersionId,
+      createdAt: p.createdAt,
+    }));
 
     return res.status(200).json({
       message: "Supervisor projects fetched successfully",
-      projects: allProjects,
+      projects: formattedProjects,
     });
   } catch (error) {
     return res.status(500).json({
@@ -97,6 +100,7 @@ export const getSupervisorProjects = async (req: Request, res: Response) => {
   }
 };
 
+// 3. Project Status Update (Unchanged)
 export const updateProjectStatus = async (req: Request, res: Response) => {
   const supervisorId = Number((req as any).user.id);
   const projectId = Number(req.params.id);
@@ -109,7 +113,6 @@ export const updateProjectStatus = async (req: Request, res: Response) => {
   }
 
   try {
-    // Ensure the project belongs to the supervisor
     const project = await db
       .select()
       .from(projects)
@@ -121,7 +124,6 @@ export const updateProjectStatus = async (req: Request, res: Response) => {
         .json({ message: "You cannot update this project" });
     }
 
-    // Check if all review tasks are verified
     const unverifiedTasks = await db
       .select()
       .from(reviewTasks)
@@ -139,12 +141,70 @@ export const updateProjectStatus = async (req: Request, res: Response) => {
       });
     }
 
-    // Update status
     await db.update(projects).set({ status }).where(eq(projects.id, projectId));
 
     res.status(200).json({ message: "Project status updated successfully" });
   } catch (error) {
     console.error("Error updating project status:", error);
     res.status(500).json({ message: "Failed to update project status", error });
+  }
+};
+
+export const projectStudents = async (req: Request, res: Response) => {
+  const supervisorId = Number((req as any).user.id);
+
+  try {
+    const assignedStudents = await db.query.users.findMany({
+      where: and(
+        eq(users.supervisorId, supervisorId),
+        eq(users.role, "STUDENT"),
+      ),
+      columns: {
+        id: true,
+        fullName: true,
+        email: true,
+        supervisorId: true,
+      },
+      orderBy: [desc(users.createdAt)],
+    });
+
+    const studentIds = assignedStudents.map((s) => s.id);
+
+    let activeProjects: any[] = [];
+    if (studentIds.length > 0) {
+      activeProjects = await db
+        .select({
+          id: projects.id,
+          title: projects.title,
+          status: projects.status,
+          studentId: projects.studentId,
+        })
+        .from(projects)
+        .where(sql`${projects.studentId} IN ${studentIds}`);
+    }
+
+    const studentRoster = assignedStudents.map((student) => {
+      const match = activeProjects.find((p) => p.studentId === student.id);
+      return {
+        ...student,
+        projectId: match?.id || null,
+        projectTitle: match?.title || null,
+        projectStatus: match?.status || null,
+      };
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "Assigned research students fetched successfully",
+      students: studentRoster,
+    });
+  } catch (error) {
+    console.error("Error fetching supervisor's students:", error);
+    return res.status(500).json({
+      success: false,
+      message:
+        "Internal Server Error while retrieving assigned student rosters",
+      error,
+    });
   }
 };

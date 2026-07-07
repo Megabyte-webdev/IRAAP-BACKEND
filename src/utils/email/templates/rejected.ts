@@ -72,7 +72,7 @@ export const rejectedTemplate = (data) => {
     </p>
 
     <div style="text-align: center;">
-      <a href="${process.env.DASHBOARD_URL}" 
+      <a href="${process.env.FRONTEND_URL}/student" target="_blank" rel="noopener noreferrer"
         style="
           background-color: #fef2f2;
           color: #b91c1c;

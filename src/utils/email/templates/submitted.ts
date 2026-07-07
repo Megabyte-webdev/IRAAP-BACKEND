@@ -97,7 +97,7 @@ export const submittedTemplate = (data) => {
     </p>
 
     <div style="text-align: center; margin-top: 28px;">
-      <a href="${process.env.DASHBOARD_URL}/supervisor" 
+      <a href="${process.env.FRONTEND_URL}/supervisor" target="_blank" rel="noopener noreferrer"
         style="
           background-color: #2563eb;
           color: #ffffff;

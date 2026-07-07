@@ -123,3 +123,31 @@ eventBus.on(Events.USER_REGISTERED, async (data: any) => {
     sender,
   );
 });
+
+eventBus.on(Events.SUPERVISOR_ASSIGNED, async (data: any) => {
+  console.log("Listener received", data);
+  const sender = data.senderType || "system";
+  await sendDirectEmail(
+    "SUPERVISOR_ASSIGNED",
+    data.studentEmail,
+    {
+      studentName: data.studentName,
+      supervisorName: data.supervisorName,
+    },
+    sender,
+  );
+});
+
+eventBus.on(Events.SUPERVISOR_ROSTER_UPDATED, async (data: any) => {
+  console.log("Listener received", data);
+  const sender = data.senderType || "system";
+  await sendDirectEmail(
+    "SUPERVISOR_ROSTER_UPDATED",
+    data.supervisorEmail,
+    {
+      supervisorName: data.supervisorName,
+      students: data.students,
+    },
+    sender,
+  );
+});

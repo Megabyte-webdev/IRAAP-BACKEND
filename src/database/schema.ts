@@ -35,6 +35,11 @@ export const messageStatusEnum = pgEnum("message_status", [
   "DELIVERED",
   "READ",
 ]);
+export const messageTypeEnum = pgEnum("message_type", [
+  "TEXT",
+  "CALL_INVITE",
+  "FILE",
+]);
 
 export const versionTriggerEnum = pgEnum("version_trigger", [
   "INITIAL_SUBMISSION",
@@ -271,6 +276,12 @@ export const messages = pgTable(
     replyToMessageId: integer("reply_to_message_id").references(
       () => messages.id,
     ),
+    type: messageTypeEnum("type").notNull().default("TEXT"),
+    meetingId: varchar("meetingId", {
+      length: 255,
+    }),
+
+    meetingUrl: text("meetingUrl"),
     readAt: timestamp("read_at"),
     createdAt: timestamp("created_at").defaultNow(),
     status: messageStatusEnum("status").default("SENT").notNull(),
@@ -362,6 +373,10 @@ export const conversationsRelations = relations(
       references: [users.id],
     }),
     messages: many(messages),
+    lastMessage: one(messages, {
+      fields: [conversations.lastMessageId],
+      references: [messages.id],
+    }),
   }),
 );
 

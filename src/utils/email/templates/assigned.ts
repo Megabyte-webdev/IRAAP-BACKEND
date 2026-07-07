@@ -102,7 +102,7 @@ export const assignedTemplate = (data) => {
     </p>
 
     <div style="text-align: center;">
-      <a href="${process.env.DASHBOARD_URL}" 
+      <a href="${process.env.FRONTEND_URL}/student" target="_blank" rel="noopener noreferrer"
         style="
           background-color: #4338ca;
           color: #ffffff;

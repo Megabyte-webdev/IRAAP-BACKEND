@@ -36,4 +36,7 @@ export enum Events {
 
   // User
   USER_REGISTERED = "user.registered",
+
+  SUPERVISOR_ASSIGNED = "supervisor.assigned",
+  SUPERVISOR_ROSTER_UPDATED = "supervisor.roster.updated",
 }
