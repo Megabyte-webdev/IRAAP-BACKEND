@@ -244,7 +244,7 @@ export async function getMessages(
           conversationId: true,
           senderId: true,
           content: true,
-          messageType: true,
+          msgType: true,
           meetingId: true,
           meetingUrl: true,
           replyToMessageId: true,

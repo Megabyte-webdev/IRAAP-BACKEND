@@ -276,7 +276,7 @@ export const messages = pgTable(
     replyToMessageId: integer("reply_to_message_id").references(
       () => messages.id,
     ),
-    type: messageTypeEnum("type").notNull().default("TEXT"),
+    msgType: messageTypeEnum("msgType").notNull().default("TEXT"),
     meetingId: varchar("meetingId", {
       length: 255,
     }),
