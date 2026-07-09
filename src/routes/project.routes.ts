@@ -2,16 +2,18 @@ import { Router } from "express";
 import {
   getProjectDetails,
   getProjectVersionHistory,
+  getProjectVersion,
   getStudentSubmissions,
   submitProject,
   updateProject,
+  getAllProjects,
 } from "../controllers/project.controller.js";
 import { authenticate, authorize } from "../middleware/auth.js";
 import { upload } from "../middleware/upload.js";
 
 const router: Router = Router();
 
-// Student only: Submit a new research project [cite: 20, 26]
+// Submit a new research project
 router.post(
   "/submit",
   authenticate,
@@ -20,6 +22,7 @@ router.post(
   submitProject,
 );
 
+// Update existing project (only own projects)
 router.put(
   "/:id",
   authenticate,
@@ -27,7 +30,8 @@ router.put(
   upload.single("file"),
   updateProject,
 );
-//student view their submissions
+
+// View own submissions
 router.get(
   "/submissions",
   authenticate,
@@ -35,6 +39,7 @@ router.get(
   getStudentSubmissions,
 );
 
+// View version history for own project
 router.get(
   "/:id/history",
   authenticate,
@@ -42,6 +47,18 @@ router.get(
   getProjectVersionHistory,
 );
 
+// Get specific version
+router.get(
+  "/:id/versions/:versionNumber",
+  authenticate,
+  authorize(["STUDENT"]),
+  getProjectVersion,
+);
+
+// List all approved projects with pagination
+// ?limit=20&offset=0&categoryId=1&status=APPROVED
+router.get("/", getAllProjects);
+// View public project details (no auth required)
 router.get("/:id", getProjectDetails);
 
 export default router;

@@ -16,6 +16,7 @@ import http from "http";
 import { initWebSocket } from "./src/services/ws.js";
 import { saveSubscription } from "./src/utils/pushStore.js";
 import bodyParser from "body-parser";
+import publicationRoutes from "./src/routes/publication.routes.js";
 dotenv.config();
 
 const app = express();
@@ -43,6 +44,7 @@ app.use((err, _req, res, _next) => {
 // Use routes
 app.use("/auth", authRoutes);
 app.use("/projects", projectRoutes);
+app.use("/publications", publicationRoutes);
 app.use("/search", searchRoutes);
 app.use("/reviews", reviewRoutes);
 app.use("/admin", adminRoutes);

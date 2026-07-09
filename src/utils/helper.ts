@@ -1,3 +1,9 @@
+import { and, eq } from "drizzle-orm";
+import { projects } from "../database/schema.js";
+import { db } from "../config/db.js";
+import type { Request, Response } from "express";
+import type { AuthUser } from "./types/user.js";
+
 export function buildMsgsDTO(message: any, reply: any = null) {
   return {
     id: message.id,
@@ -77,3 +83,32 @@ export function getReminderTimes(scheduleAt: Date) {
 
   return [];
 }
+
+export const sanitizeString = (str: string): string => {
+  if (!str) return "";
+  return str.trim().replace(/[<>]/g, "").substring(0, 5000);
+};
+
+export const errorResponse = (
+  res: Response,
+  statusCode: number,
+  message: string,
+) => {
+  return res.status(statusCode).json({ message });
+};
+
+export const getAuthUser = (req: Request): AuthUser | null => {
+  const user = (req as any).user as AuthUser | undefined;
+  return user && user.id ? user : null;
+};
+
+export const verifyProjectOwnership = async (
+  projectId: number,
+  studentId: number,
+): Promise<boolean> => {
+  const project = await db.query.projects.findFirst({
+    where: and(eq(projects.id, projectId), eq(projects.studentId, studentId)),
+    columns: { id: true },
+  });
+  return !!project;
+};

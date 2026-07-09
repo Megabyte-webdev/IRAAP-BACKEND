@@ -23,6 +23,20 @@ export const statusEnum = pgEnum("status", [
   "REVISION_REQUESTED",
 ]);
 
+export const researchTypeEnum = pgEnum("research_type", [
+  "BSC_PROJECT",
+  "MSC_THESIS",
+  "PHD_DISSERTATION",
+  "JOURNAL",
+  "INDEPENDENT_RESEARCH",
+]);
+
+export const publicationStatusEnum = pgEnum("publication_status", [
+  "PENDING",
+  "APPROVED",
+  "REJECTED",
+]);
+
 export const reviewTaskStatusEnum = pgEnum("review_task_status", [
   "PENDING",
   "IN_PROGRESS",
@@ -127,7 +141,9 @@ export const projects = pgTable(
 
     supervisorId: integer("supervisor_id").references(() => users.id),
     categoryId: integer("category_id").references(() => categories.id),
-
+    researchType: researchTypeEnum("research_type")
+      .default("INDEPENDENT_RESEARCH")
+      .notNull(),
     status: statusEnum("status").default("PENDING").notNull(),
 
     currentVersionId: integer("current_version_id").references(
@@ -147,6 +163,55 @@ export const projects = pgTable(
       table.studentId,
       table.title,
     ),
+  }),
+);
+
+export const publicationRequests = pgTable(
+  "publication_requests",
+  {
+    id: serial("id").primaryKey(),
+
+    projectId: integer("project_id").references(() => projects.id, {
+      onDelete: "cascade",
+    }),
+
+    requesterId: integer("requester_id")
+      .references(() => users.id)
+      .notNull(),
+
+    title: text("title").notNull(),
+
+    abstract: text("abstract").notNull(),
+
+    fileUrl: text("file_url").notNull(),
+
+    publicId: text("public_id").notNull(),
+    researchType: researchTypeEnum("research_type")
+      .default("JOURNAL")
+      .notNull(),
+
+    keywords: text("keywords").array().notNull(),
+
+    researchArea: varchar("research_area", {
+      length: 255,
+    }).notNull(),
+
+    methodology: text("methodology"),
+
+    status: publicationStatusEnum("status").default("PENDING").notNull(),
+
+    adminNote: text("admin_note"),
+
+    publishedAt: timestamp("published_at"),
+    approvedBy: integer("approved_by").references(() => users.id),
+
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => ({
+    statusIndex: index("publication_status_idx").on(table.status),
+
+    requesterIndex: index("publication_requester_idx").on(table.requesterId),
   }),
 );
 
@@ -300,17 +365,40 @@ export const messages = pgTable(
   }),
 );
 
+export const usersRelations = relations(users, ({ many }) => ({
+  projects: many(projects),
+
+  publicationRequests: many(publicationRequests, {
+    relationName: "publicationRequester",
+  }),
+
+  approvedPublications: many(publicationRequests, {
+    relationName: "publicationApprover",
+  }),
+
+  reviews: many(reviews),
+}));
+
 export const projectsRelations = relations(projects, ({ one, many }) => ({
   student: one(users, {
     fields: [projects.studentId],
     references: [users.id],
   }),
+
   supervisor: one(users, {
     fields: [projects.supervisorId],
     references: [users.id],
   }),
+
+  publicationRequest: one(publicationRequests, {
+    fields: [projects.id],
+    references: [publicationRequests.projectId],
+  }),
+
   reviews: many(reviews),
+
   versions: many(projectVersions),
+
   currentVersion: one(projectVersions, {
     fields: [projects.currentVersionId],
     references: [projectVersions.id],
@@ -399,3 +487,25 @@ export const messagesRelations = relations(messages, ({ one }) => ({
     references: [messages.id],
   }),
 }));
+
+export const publicationRequestsRelations = relations(
+  publicationRequests,
+  ({ one }) => ({
+    requester: one(users, {
+      fields: [publicationRequests.requesterId],
+      references: [users.id],
+      relationName: "publicationRequester",
+    }),
+
+    approvedByUser: one(users, {
+      fields: [publicationRequests.approvedBy],
+      references: [users.id],
+      relationName: "publicationApprover",
+    }),
+
+    project: one(projects, {
+      fields: [publicationRequests.projectId],
+      references: [projects.id],
+    }),
+  }),
+);

@@ -11,10 +11,13 @@ export const withPagination = async <T>({
   page: number;
   limit: number;
 }) => {
-  const offset = (page - 1) * limit;
+  const safePage = Math.max(page, 1);
+  const safeLimit = Math.min(Math.max(limit, 1), 100);
+
+  const offset = (safePage - 1) * safeLimit;
 
   const [data, countResult] = await Promise.all([
-    dataQuery(limit, offset),
+    dataQuery(safeLimit, offset),
     countQuery,
   ]);
 
@@ -24,9 +27,10 @@ export const withPagination = async <T>({
     data,
     pagination: {
       total,
-      page,
-      limit,
-      totalPages: Math.ceil(total / limit),
+      page: safePage,
+      limit: safeLimit,
+      totalPages: Math.ceil(total / safeLimit),
+      hasMore: safePage < Math.ceil(total / safeLimit),
     },
   };
 };

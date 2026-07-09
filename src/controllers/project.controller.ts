@@ -5,51 +5,77 @@ import {
   metadata,
   projects,
   projectVersions,
+  researchTypeEnum,
+  users,
 } from "../database/schema.js";
 import { uploadToCloudinary } from "../utils/fileUpload.js";
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, ilike, sql } from "drizzle-orm";
 import cloudinary from "../config/cloudinary.js";
 import { z } from "zod";
-// HELPERS
-const sanitizeString = (input: string) =>
-  input.replace(/<[^>]*>?/gm, "").trim();
+import { withPagination } from "../utils/pagination.js";
+import {
+  errorResponse,
+  getAuthUser,
+  sanitizeString,
+  verifyProjectOwnership,
+} from "../utils/helper.js";
 
 const projectSchema = z.object({
-  title: z.string().min(1),
-  abstract: z.string().min(1),
+  title: z.string().min(1, "Title is required"),
+  abstract: z.string().min(1, "Abstract is required"),
   submissionYear: z.preprocess((val) => Number(val), z.number().int()),
   categoryId: z.preprocess((val) => Number(val), z.number().int()),
-  methodology: z.string().min(1),
+  methodology: z.string().min(1, "Methodology is required"),
   researchArea: z.string().optional().default(""),
   keywords: z
     .array(z.string())
     .transform((arr) => arr.map((k) => sanitizeString(k))),
 });
-// SUBMIT PROJECT  (creates version 1)
+
+// ENDPOINTS
+
 export const submitProject = async (req: Request, res: Response) => {
-  const studentId = (req as any).user?.id;
-  const supervisorId = (req as any).user?.supervisorId;
+  const authUser = getAuthUser(req);
+  if (!authUser) {
+    return errorResponse(res, 401, "User ID not found in request");
+  }
+
+  const studentId = authUser.id;
+  const supervisorId = authUser.supervisorId;
   const file = req.file;
 
-  if (!file) return res.status(400).json({ message: "No PDF file provided" });
-  if (file.size > 20 * 1024 * 1024)
-    return res.status(400).json({ message: "File size must be < 20MB" });
+  if (!file) {
+    return errorResponse(res, 400, "No PDF file provided");
+  }
+
+  if (file.size > 20 * 1024 * 1024) {
+    return errorResponse(res, 400, "File size must be < 20MB");
+  }
 
   let parsed;
   try {
     parsed = projectSchema.parse(req.body);
   } catch (err: any) {
-    return res
-      .status(400)
-      .json({ message: "Invalid input", error: err.issues });
+    return errorResponse(
+      res,
+      400,
+      `Validation error: ${err.errors?.[0]?.message || "Invalid input"}`,
+    );
   }
 
+  // Sanitize strings
   parsed.title = sanitizeString(parsed.title);
   parsed.abstract = sanitizeString(parsed.abstract);
   parsed.methodology = sanitizeString(parsed.methodology);
   parsed.researchArea = sanitizeString(parsed.researchArea);
 
-  const uploadResult: any = await uploadToCloudinary(file.buffer);
+  let uploadResult: any;
+  try {
+    uploadResult = await uploadToCloudinary(file.buffer);
+  } catch (error) {
+    console.error("Cloudinary upload failed:", error);
+    return errorResponse(res, 500, "File upload failed");
+  }
 
   try {
     const result = await db.transaction(async (tx) => {
@@ -63,7 +89,7 @@ export const submitProject = async (req: Request, res: Response) => {
           studentId,
           categoryId: parsed.categoryId,
           status: "PENDING",
-          fileUrl: uploadResult.url, // kept in sync below
+          fileUrl: uploadResult.url,
           publicId: uploadResult.publicId,
           totalVersions: 1,
           updatedAt: new Date(),
@@ -84,13 +110,11 @@ export const submitProject = async (req: Request, res: Response) => {
         })
         .returning() as Promise<any[]>);
 
-      // Point project at version 1
       await tx
         .update(projects)
         .set({ currentVersionId: version.id })
         .where(eq(projects.id, project.id));
 
-      // Insert metadata
       await tx.insert(metadata).values({
         projectId: project.id,
         keywords: parsed.keywords,
@@ -107,30 +131,48 @@ export const submitProject = async (req: Request, res: Response) => {
       version: result.version,
     });
   } catch (error: any) {
-    console.error(error);
+    console.error("Submission error:", error);
     if (uploadResult?.publicId) {
-      await cloudinary.uploader.destroy(uploadResult.publicId);
+      try {
+        await cloudinary.uploader.destroy(uploadResult.publicId);
+      } catch (cleanupError) {
+        console.error("Failed to cleanup Cloudinary file:", cleanupError);
+      }
     }
-    return res.status(500).json({
-      message: "Submission failed",
-      error: error.message,
-    });
+    return errorResponse(res, 500, "Submission failed");
   }
 };
-// UPDATE PROJECT  (student edits — STUDENT_UPDATE trigger)
+
 export const updateProject = async (req: Request, res: Response) => {
+  const authUser = getAuthUser(req);
+  if (!authUser) {
+    return errorResponse(res, 401, "User ID not found in request");
+  }
+
   const projectId = Number(req.params.id);
-  const studentId = (req as any).user?.id;
-  const supervisorId = (req as any).user?.supervisorId;
+  const studentId = authUser.id;
+  const supervisorId = authUser.supervisorId;
   const file = req.file;
+
+  if (isNaN(projectId)) {
+    return errorResponse(res, 400, "Invalid project ID");
+  }
+
+  // Verify ownership
+  const ownsProject = await verifyProjectOwnership(projectId, studentId);
+  if (!ownsProject) {
+    return errorResponse(res, 403, "You can only update your own projects");
+  }
 
   let parsed;
   try {
     parsed = projectSchema.parse(req.body);
   } catch (err: any) {
-    return res
-      .status(400)
-      .json({ message: "Invalid input", error: err.errors });
+    return errorResponse(
+      res,
+      400,
+      `Validation error: ${err.errors?.[0]?.message || "Invalid input"}`,
+    );
   }
 
   parsed.title = sanitizeString(parsed.title);
@@ -149,14 +191,20 @@ export const updateProject = async (req: Request, res: Response) => {
         ),
       });
 
-      if (!project) throw new Error("Project not found");
+      if (!project) {
+        throw new Error("Project not found");
+      }
 
       let newVersionId = project.currentVersionId;
       let newTotalVersions = project.totalVersions;
 
-      // Only create a new version when a replacement file is provided
+      // Create new version only if file provided
       if (file) {
-        uploadResult = await uploadToCloudinary(file.buffer);
+        try {
+          uploadResult = await uploadToCloudinary(file.buffer);
+        } catch (error) {
+          throw new Error("File upload failed");
+        }
 
         const lastVersion = await tx
           .select()
@@ -175,7 +223,7 @@ export const updateProject = async (req: Request, res: Response) => {
             publicId: uploadResult.publicId,
             versionNumber: nextVersion,
             uploadedBy: studentId,
-            changeNote: "Student update",
+            changeNote: req.body.changeNote || "Student update",
             trigger: "STUDENT_UPDATE",
             fileSizeBytes: file.size,
           })
@@ -195,7 +243,6 @@ export const updateProject = async (req: Request, res: Response) => {
           supervisorId,
           currentVersionId: newVersionId,
           totalVersions: newTotalVersions,
-          // Keep fileUrl in sync if file was replaced
           ...(uploadResult && {
             fileUrl: uploadResult.url,
             publicId: uploadResult.publicId,
@@ -222,56 +269,62 @@ export const updateProject = async (req: Request, res: Response) => {
       project: updated,
     });
   } catch (error: any) {
+    console.error("Update error:", error);
     if (uploadResult?.publicId) {
-      await cloudinary.uploader.destroy(uploadResult.publicId);
+      try {
+        await cloudinary.uploader.destroy(uploadResult.publicId);
+      } catch (cleanupError) {
+        console.error("Failed to cleanup Cloudinary file:", cleanupError);
+      }
     }
-    return res.status(500).json({
-      message: "Project update failed",
-      error: error.message,
-    });
+    return errorResponse(res, 500, "Project update failed");
   }
 };
-// GET PENDING PROJECTS  (supervisor view)
-export const getPendingProjects = async (req: Request, res: Response) => {
-  const supervisorId = Number((req as any).user.id);
-  try {
-    const pendingProjects = await db
-      .select()
-      .from(projects)
-      .where(
-        and(
-          eq(projects.supervisorId, supervisorId),
-          eq(projects.status, "PENDING"),
-        ),
-      );
-    res.status(200).json({
-      message: "Pending projects fetched successfully",
-      projects: pendingProjects,
-    });
-  } catch (error) {
-    res.status(500).json({ message: "Error fetching pending projects", error });
-  }
-};
-// GET STUDENT SUBMISSIONS
+
 export const getStudentSubmissions = async (req: Request, res: Response) => {
-  const studentId = Number((req as any)?.user?.id);
+  const authUser = getAuthUser(req);
+  if (!authUser) {
+    return errorResponse(res, 401, "User ID not found in request");
+  }
+
+  const studentId = authUser.id;
+
   try {
-    const submissions = await db.query.projects.findMany({
-      where: eq(projects.studentId, studentId),
-    });
-    res.status(200).json({
+    const submissions = await db
+      .select({
+        id: projects.id,
+        title: projects.title,
+        abstract: projects.abstract,
+        submissionYear: projects.submissionYear,
+        status: projects.status,
+        categoryId: projects.categoryId,
+        category: categories.name,
+        totalVersions: projects.totalVersions,
+        createdAt: projects.createdAt,
+        updatedAt: projects.updatedAt,
+      })
+      .from(projects)
+      .innerJoin(categories, eq(projects.categoryId, categories.id))
+      .where(eq(projects.studentId, studentId))
+      .orderBy(desc(projects.createdAt));
+
+    return res.status(200).json({
       message: "Student submissions fetched successfully",
+      count: submissions.length,
       projects: submissions,
     });
   } catch (error) {
-    res
-      .status(500)
-      .json({ message: "Error fetching student submissions", error });
+    console.error("Fetch submissions error:", error);
+    return errorResponse(res, 500, "Error fetching student submissions");
   }
 };
-// GET PROJECT DETAILS
+
 export const getProjectDetails = async (req: Request, res: Response) => {
   const projectId = Number(req.params.id);
+
+  if (isNaN(projectId)) {
+    return errorResponse(res, 400, "Invalid project ID");
+  }
 
   try {
     const project = await db
@@ -288,39 +341,63 @@ export const getProjectDetails = async (req: Request, res: Response) => {
         researchArea: metadata.researchArea,
         methodology: metadata.methodology,
         totalVersions: projects.totalVersions,
-        author: sql<string>`(SELECT full_name FROM users WHERE id = ${projects.studentId})`,
-        supervisor: sql<string>`(SELECT full_name FROM users WHERE id = ${projects.supervisorId})`,
+        // Use user table joins instead of subqueries
+        author: users.full_name,
         createdAt: projects.createdAt,
+        updatedAt: projects.updatedAt,
       })
       .from(projects)
       .innerJoin(categories, eq(projects.categoryId, categories.id))
       .innerJoin(metadata, eq(projects.id, metadata.projectId))
+      .innerJoin(users, eq(projects.studentId, users.id))
       .where(eq(projects.id, projectId))
       .then((results) => results[0]);
 
-    if (!project) return res.status(404).json({ message: "Project not found" });
+    if (!project) {
+      return errorResponse(res, 404, "Project not found");
+    }
 
-    res
-      .status(200)
-      .json({ message: "Project details fetched successfully", project });
+    return res.status(200).json({
+      message: "Project details fetched successfully",
+      project,
+    });
   } catch (error) {
-    res.status(500).json({ message: "Error fetching project details", error });
+    console.error("Fetch project details error:", error);
+    return errorResponse(res, 500, "Error fetching project details");
   }
 };
-// GET VERSION HISTORY  (full audit trail)
+
 export const getProjectVersionHistory = async (req: Request, res: Response) => {
+  const authUser = getAuthUser(req);
+  if (!authUser) {
+    return errorResponse(res, 401, "User ID not found in request");
+  }
+
   const projectId = Number(req.params.id);
+  const studentId = authUser.id;
 
   if (isNaN(projectId)) {
-    return res.status(400).json({ message: "Invalid project id" });
+    return errorResponse(res, 400, "Invalid project ID");
   }
 
   try {
-    // Confirm project exists and requester has access
+    // Verify ownership
     const project = await db.query.projects.findFirst({
-      where: eq(projects.id, projectId),
+      where: and(eq(projects.id, projectId), eq(projects.studentId, studentId)),
+      columns: {
+        id: true,
+        currentVersionId: true,
+        totalVersions: true,
+      },
     });
-    if (!project) return res.status(404).json({ message: "Project not found" });
+
+    if (!project) {
+      return errorResponse(
+        res,
+        403,
+        "You can only view history for your own projects",
+      );
+    }
 
     const versions = await db
       .select({
@@ -332,12 +409,11 @@ export const getProjectVersionHistory = async (req: Request, res: Response) => {
         trigger: projectVersions.trigger,
         fileSizeBytes: projectVersions.fileSizeBytes,
         linkedReviewId: projectVersions.linkedReviewId,
-        uploadedBy: sql<string>`(SELECT full_name FROM users WHERE id = ${projectVersions.uploadedBy})`,
+        uploadedBy: users.full_name,
         createdAt: projectVersions.createdAt,
-        // Indicate if this is the current active version
-        isCurrent: sql<boolean>`${projectVersions.id} = ${project.currentVersionId}`,
       })
       .from(projectVersions)
+      .innerJoin(users, eq(projectVersions.uploadedBy, users.id))
       .where(eq(projectVersions.projectId, projectId))
       .orderBy(desc(projectVersions.versionNumber));
 
@@ -349,26 +425,55 @@ export const getProjectVersionHistory = async (req: Request, res: Response) => {
       versions,
     });
   } catch (error: any) {
-    console.error("Error fetching version history:", error);
-    return res.status(500).json({
-      message: "Failed to fetch version history",
-      error: error.message,
-    });
+    console.error("Fetch version history error:", error);
+    return errorResponse(res, 500, "Failed to fetch version history");
   }
 };
-// GET SINGLE VERSION  (download a specific version)
+
 export const getProjectVersion = async (req: Request, res: Response) => {
+  const authUser = getAuthUser(req);
+  if (!authUser) {
+    return errorResponse(res, 401, "User ID not found in request");
+  }
+
   const projectId = Number(req.params.id);
   const versionNumber = Number(req.params.versionNumber);
+  const studentId = authUser.id;
 
   if (isNaN(projectId) || isNaN(versionNumber)) {
-    return res.status(400).json({ message: "Invalid parameters" });
+    return errorResponse(res, 400, "Invalid parameters");
   }
 
   try {
+    // Verify ownership first
+    const project = await db.query.projects.findFirst({
+      where: and(eq(projects.id, projectId), eq(projects.studentId, studentId)),
+      columns: { id: true },
+    });
+
+    if (!project) {
+      return errorResponse(
+        res,
+        403,
+        "You can only access your own project versions",
+      );
+    }
+
     const version = await db
-      .select()
+      .select({
+        id: projectVersions.id,
+        versionNumber: projectVersions.versionNumber,
+        fileUrl: projectVersions.fileUrl,
+        publicId: projectVersions.publicId,
+        changeNote: projectVersions.changeNote,
+        trigger: projectVersions.trigger,
+        fileSizeBytes: projectVersions.fileSizeBytes,
+        linkedReviewId: projectVersions.linkedReviewId,
+        uploadedBy: users.full_name,
+        createdAt: projectVersions.createdAt,
+      })
       .from(projectVersions)
+      .innerJoin(users, eq(projectVersions.uploadedBy, users.id))
       .where(
         and(
           eq(projectVersions.projectId, projectId),
@@ -378,7 +483,7 @@ export const getProjectVersion = async (req: Request, res: Response) => {
       .then((r) => r[0]);
 
     if (!version) {
-      return res.status(404).json({ message: "Version not found" });
+      return errorResponse(res, 404, "Version not found");
     }
 
     return res.status(200).json({
@@ -386,9 +491,99 @@ export const getProjectVersion = async (req: Request, res: Response) => {
       version,
     });
   } catch (error: any) {
-    return res.status(500).json({
-      message: "Failed to fetch version",
-      error: error.message,
+    console.error("Fetch version error:", error);
+    return errorResponse(res, 500, "Failed to fetch version");
+  }
+};
+
+export const getAllProjects = async (req: Request, res: Response) => {
+  try {
+    const page = Number(req.query.page) || 1;
+    const limit = Number(req.query.limit) || 20;
+
+    const {
+      title,
+      year,
+      researchArea,
+      methodology,
+      categoryId,
+      status = "APPROVED",
+      researchType,
+      keyword, // This handles strings or arrays passed from the frontend query string
+    } = req.query;
+
+    const conditions = [
+      eq(projects.status, status as any),
+
+      categoryId ? eq(projects.categoryId, Number(categoryId)) : undefined,
+
+      title ? ilike(projects.title, `%${title}%`) : undefined,
+
+      year ? eq(projects.submissionYear, Number(year)) : undefined,
+
+      researchArea
+        ? ilike(metadata.researchArea, `%${researchArea}%`)
+        : undefined,
+
+      methodology ? ilike(metadata.methodology, `%${methodology}%`) : undefined,
+
+      researchType ? eq(projects.researchType, researchType as any) : undefined,
+
+      // Handle both a single keyword string or an array of active filter keywords
+      keyword
+        ? Array.isArray(keyword)
+          ? sql`${metadata.keywords} && ARRAY[${sql.join(keyword.map((k) => sql`${k}::text`))}]::text[]`
+          : sql`${metadata.keywords} @> ARRAY[${keyword}]::text[]`
+        : undefined,
+    ];
+
+    const whereClause = and(...conditions.filter(Boolean));
+
+    const result = await withPagination({
+      page,
+      limit,
+      countQuery: db
+        .select({ count: sql<number>`cast(count(*) as integer)` })
+        .from(projects)
+        .leftJoin(metadata, eq(projects.id, metadata.projectId))
+        .where(whereClause),
+
+      dataQuery: (limit, offset) =>
+        db
+          .select({
+            id: projects.id,
+            title: projects.title,
+            abstract: projects.abstract,
+            fileUrl: projects.fileUrl,
+            submissionYear: projects.submissionYear,
+            status: projects.status,
+            categoryId: projects.categoryId,
+            category: categories.name,
+            keywords: metadata.keywords,
+            researchArea: metadata.researchArea,
+            researchType: projects.researchType,
+            methodology: metadata.methodology,
+            totalVersions: projects.totalVersions,
+            author: users.fullName,
+            createdAt: projects.createdAt,
+            updatedAt: projects.updatedAt,
+          })
+          .from(projects)
+          .leftJoin(categories, eq(projects.categoryId, categories.id))
+          .leftJoin(metadata, eq(projects.id, metadata.projectId))
+          .leftJoin(users, eq(projects.studentId, users.id))
+          .where(whereClause)
+          .orderBy(desc(projects.updatedAt))
+          .limit(limit)
+          .offset(offset),
     });
+
+    return res.status(200).json({
+      message: "Projects fetched successfully",
+      ...result,
+    });
+  } catch (error) {
+    console.error(error);
+    return errorResponse(res, 500, "Error fetching projects");
   }
 };
