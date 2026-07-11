@@ -6,6 +6,7 @@ import {
   projects,
   projectVersions,
   researchTypeEnum,
+  reviews,
   users,
 } from "../database/schema.js";
 import { uploadToCloudinary } from "../utils/fileUpload.js";
@@ -73,7 +74,7 @@ export const submitProject = async (req: Request, res: Response) => {
   try {
     uploadResult = await uploadToCloudinary(file.buffer);
   } catch (error) {
-    console.error("Cloudinary upload failed:", error);
+    console.log("Cloudinary upload failed:", error);
     return errorResponse(res, 500, "File upload failed");
   }
 
@@ -131,12 +132,12 @@ export const submitProject = async (req: Request, res: Response) => {
       version: result.version,
     });
   } catch (error: any) {
-    console.error("Submission error:", error);
+    console.log("Submission error:", error);
     if (uploadResult?.publicId) {
       try {
         await cloudinary.uploader.destroy(uploadResult.publicId);
       } catch (cleanupError) {
-        console.error("Failed to cleanup Cloudinary file:", cleanupError);
+        console.log("Failed to cleanup Cloudinary file:", cleanupError);
       }
     }
     return errorResponse(res, 500, "Submission failed");
@@ -269,12 +270,12 @@ export const updateProject = async (req: Request, res: Response) => {
       project: updated,
     });
   } catch (error: any) {
-    console.error("Update error:", error);
+    console.log("Update error:", error);
     if (uploadResult?.publicId) {
       try {
         await cloudinary.uploader.destroy(uploadResult.publicId);
       } catch (cleanupError) {
-        console.error("Failed to cleanup Cloudinary file:", cleanupError);
+        console.log("Failed to cleanup Cloudinary file:", cleanupError);
       }
     }
     return errorResponse(res, 500, "Project update failed");
@@ -314,11 +315,10 @@ export const getStudentSubmissions = async (req: Request, res: Response) => {
       projects: submissions,
     });
   } catch (error) {
-    console.error("Fetch submissions error:", error);
+    console.log("Fetch submissions error:", error);
     return errorResponse(res, 500, "Error fetching student submissions");
   }
 };
-
 export const getProjectDetails = async (req: Request, res: Response) => {
   const projectId = Number(req.params.id);
 
@@ -327,31 +327,16 @@ export const getProjectDetails = async (req: Request, res: Response) => {
   }
 
   try {
-    const project = await db
-      .select({
-        id: projects.id,
-        title: projects.title,
-        abstract: projects.abstract,
-        fileUrl: projects.fileUrl,
-        submissionYear: projects.submissionYear,
-        status: projects.status,
-        categoryId: projects.categoryId,
-        category: categories.name,
-        keywords: metadata.keywords,
-        researchArea: metadata.researchArea,
-        methodology: metadata.methodology,
-        totalVersions: projects.totalVersions,
-        // Use user table joins instead of subqueries
-        author: users.full_name,
-        createdAt: projects.createdAt,
-        updatedAt: projects.updatedAt,
-      })
-      .from(projects)
-      .innerJoin(categories, eq(projects.categoryId, categories.id))
-      .innerJoin(metadata, eq(projects.id, metadata.projectId))
-      .innerJoin(users, eq(projects.studentId, users.id))
-      .where(eq(projects.id, projectId))
-      .then((results) => results[0]);
+    const project = await db.query.projects.findMany({
+      where: eq(projects.id, projectId),
+      with: {
+        student: true,
+        supervisor: true,
+        reviews: true,
+        versions: true,
+        currentVersion: true,
+      },
+    });
 
     if (!project) {
       return errorResponse(res, 404, "Project not found");
@@ -362,8 +347,12 @@ export const getProjectDetails = async (req: Request, res: Response) => {
       project,
     });
   } catch (error) {
-    console.error("Fetch project details error:", error);
-    return errorResponse(res, 500, "Error fetching project details");
+    console.log("Fetch project details error:", error);
+    return errorResponse(
+      res,
+      500,
+      error instanceof Error ? error.message : "Unknown database error",
+    );
   }
 };
 
@@ -425,7 +414,7 @@ export const getProjectVersionHistory = async (req: Request, res: Response) => {
       versions,
     });
   } catch (error: any) {
-    console.error("Fetch version history error:", error);
+    console.log("Fetch version history error:", error);
     return errorResponse(res, 500, "Failed to fetch version history");
   }
 };
@@ -491,7 +480,7 @@ export const getProjectVersion = async (req: Request, res: Response) => {
       version,
     });
   } catch (error: any) {
-    console.error("Fetch version error:", error);
+    console.log("Fetch version error:", error);
     return errorResponse(res, 500, "Failed to fetch version");
   }
 };
@@ -583,7 +572,7 @@ export const getAllProjects = async (req: Request, res: Response) => {
       ...result,
     });
   } catch (error) {
-    console.error(error);
+    console.log(error);
     return errorResponse(res, 500, "Error fetching projects");
   }
 };
