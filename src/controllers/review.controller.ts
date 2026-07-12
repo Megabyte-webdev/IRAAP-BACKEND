@@ -128,9 +128,13 @@ export const getProjectReviewsWithTasks = async (
 };
 
 // UPDATE TASK BY STUDENT  (optional evidence file)
-export const updateTaskByStudent = async (req: Request, res: Response) => {
-  const { taskId } = req.params;
+export const updateAllReviewTasksByStudent = async (
+  req: Request,
+  res: Response,
+) => {
+  const reviewId = Number(req.params.reviewId);
   const { status, studentNote } = req.body;
+  const studentId = Number((req as any).user.id);
 
   if (!["IN_PROGRESS", "COMPLETED"].includes(status)) {
     return res
@@ -138,81 +142,93 @@ export const updateTaskByStudent = async (req: Request, res: Response) => {
       .json({ message: "Invalid status. Use IN_PROGRESS or COMPLETED" });
   }
 
+  if (isNaN(reviewId)) {
+    return res.status(400).json({ message: "Invalid review round reference" });
+  }
+
   try {
-    // 1. Fetch task context
-    const task = await db.query.reviewTasks.findFirst({
-      where: eq(reviewTasks.id, Number(taskId)),
-    });
-
-    if (!task) return res.status(404).json({ message: "Task not found" });
-    if (task.status === "VERIFIED") {
-      return res.status(400).json({ message: "Cannot update a verified task" });
-    }
-
-    const updateData: any = {
-      status,
-      studentNote: studentNote ?? task.studentNote,
-      updatedAt: new Date(),
-    };
-
-    if (status === "COMPLETED") {
-      updateData.completedAt = new Date();
-    }
-
-    // 2. Execute state update and progress analytics in a clean transaction
     const result = await db.transaction(async (tx) => {
-      const [updated] = await tx
-        .update(reviewTasks)
-        .set(updateData)
-        .where(eq(reviewTasks.id, Number(taskId)))
-        .returning();
+      // 1. Validate that the review exists and belongs to this student's project
+      const review = await tx.query.reviews.findFirst({
+        where: eq(reviews.id, reviewId),
+      });
 
-      // Get all sibling tasks in this specific review round
-      const totalTasks = await tx
-        .select()
-        .from(reviewTasks)
-        .where(eq(reviewTasks.reviewId, task.reviewId));
+      if (!review) throw new Error("Review round not found");
 
-      const incompleteTasks = totalTasks.filter(
-        (t) => !["COMPLETED", "VERIFIED"].includes(t.status),
-      );
-
-      const projectInfo: any = await tx.query.projects.findFirst({
-        where: eq(projects.id, task.projectId),
+      const project = await tx.query.projects.findFirst({
+        where: and(
+          eq(projects.id, review.projectId),
+          eq(projects.studentId, studentId),
+        ),
         with: { supervisor: true },
       });
 
+      if (!project) throw new Error("Access denied or project mismatch");
+
+      // 2. Prepare atomic update fields
+      const updateData: any = {
+        status,
+        studentNote: studentNote ?? null, // Overwrites or applies note to all round tasks
+        updatedAt: new Date(),
+      };
+
+      if (status === "COMPLETED") {
+        updateData.completedAt = new Date();
+      }
+
+      // 3. Update all unverified tasks in this specific review round in ONE query
+      await tx
+        .update(reviewTasks)
+        .set(updateData)
+        .where(
+          and(
+            eq(reviewTasks.reviewId, reviewId),
+            not(eq(reviewTasks.status, "VERIFIED")), // Prevent overriding verified states
+          ),
+        );
+
+      // 4. Fetch the total counts for the response/analytics cleanly
+      const allTasks = await tx
+        .select()
+        .from(reviewTasks)
+        .where(eq(reviewTasks.reviewId, reviewId));
+
+      const remainingCount = allTasks.filter(
+        (t) => !["COMPLETED", "VERIFIED"].includes(t.status),
+      ).length;
+
       return {
-        updatedTask: updated,
-        remainingCount: incompleteTasks.length,
-        project: projectInfo,
+        project,
+        remainingCount,
+        totalUpdated: allTasks.length,
       };
     });
 
-    // 3. Emit progress updates to your Event Bus based on Remaining Tasks
-    if (result.updatedTask.status === "COMPLETED") {
-      if (result.project?.supervisor?.email) {
-        eventBus.emit(Events.TASK_SUBMITTED, {
-          supervisorEmail: result.project.supervisor.email,
-          supervisorName: result.project.supervisor.fullName,
-          studentName: (req as any).user.fullName,
-          projectName: result.project.title,
-          taskTitle: task.title,
-          remainingCount: result.remainingCount,
-          isRoundFinished: result.remainingCount === 0,
-        });
-      }
+    // 5. Emit a clean, single notification out-of-band if moving to COMPLETED
+    if (status === "COMPLETED" && result.project?.supervisor?.email) {
+      eventBus.emit(Events.TASK_SUBMITTED, {
+        supervisorEmail: result.project.supervisor.email,
+        supervisorName: result.project.supervisor.fullName,
+        studentName: (req as any).user.fullName,
+        projectName: result.project.title,
+        taskTitle: `All tasks in Review Round #${reviewId} marked as completed`,
+        remainingCount: result.remainingCount,
+        isRoundFinished: result.remainingCount === 0,
+      });
     }
 
     return res.status(200).json({
-      message: "Task progress recorded successfully",
-      task: result.updatedTask,
+      message: `Successfully updated all unverified tasks in review round #${reviewId} to ${status}`,
       remainingTasks: result.remainingCount,
     });
   } catch (error: any) {
-    console.error("updateTaskByStudent error:", error);
-    return res.status(500).json({
-      message: "Failed to update task progress",
+    console.error("updateAllReviewTasksByStudent error:", error);
+    const code =
+      error.message.includes("not found") || error.message.includes("denied")
+        ? 404
+        : 500;
+    return res.status(code).json({
+      message: "Failed to update review tasks progress",
       error: error.message,
     });
   }
@@ -374,7 +390,7 @@ export const submitRevisionForReview = async (req: Request, res: Response) => {
       .json({ message: "Compilation pipeline failed", error: error.message });
   }
 };
-// VERIFY TASK BY SUPERVISOR
+
 export const verifyReviewRoundBySupervisor = async (
   req: Request,
   res: Response,
@@ -403,6 +419,7 @@ export const verifyReviewRoundBySupervisor = async (
 
       if (!project) throw new Error("Access denied or project mismatch");
 
+      // 1. Mark all tasks in this target review round as VERIFIED
       await tx
         .update(reviewTasks)
         .set({
@@ -422,27 +439,27 @@ export const verifyReviewRoundBySupervisor = async (
           ),
         );
 
-      // 4. Global system check: Are ALL tasks for this entire project now VERIFIED?
+      // 2. Fetch all historical tasks linked to this overall project to check completeness
       const allProjectTasks = await tx.query.reviewTasks.findMany({
         where: eq(reviewTasks.projectId, project.id),
       });
 
-      const completelyFinished = allProjectTasks.every(
-        (t) => t.status === "VERIFIED",
+      // 3. Evaluate if every single task under the project is now VERIFIED
+      const isProjectFullyVerified = allProjectTasks.every(
+        (task) => task.status === "VERIFIED",
       );
 
-      // If everything across the board is clear, mark the core project as APPROVED
-      if (completelyFinished) {
+      // 4. If all tasks are clear, advance the top-level project status automatically
+      if (isProjectFullyVerified && allProjectTasks.length > 0) {
         await tx
           .update(projects)
           .set({
-            status: "APPROVED",
+            status: "VERIFIED", // The new status unlocking student publication paths
             updatedAt: new Date(),
           })
           .where(eq(projects.id, project.id));
       }
 
-      // Fetch student info for the events loop notification
       const projectWithStudent: any = await tx.query.projects.findFirst({
         where: eq(projects.id, project.id),
         with: { student: true },
@@ -451,25 +468,38 @@ export const verifyReviewRoundBySupervisor = async (
       return {
         project,
         projectWithStudent,
-        isFullyApproved: completelyFinished,
+        isProjectFullyVerified,
       };
     });
 
-    // 5. Trigger notifications out-of-band
+    // 5. Fire off the appropriate notification triggers based on completeness
     if (result.projectWithStudent?.student?.email) {
-      eventBus.emit(Events.TASK_VERIFIED, {
-        studentEmail: result.projectWithStudent.student.email,
-        studentName: result.projectWithStudent.student.fullName,
-        projectName: result.project.title,
-        taskTitle: `All tasks in round "${reviewId}" approved`,
-        supervisorName: (req as any).user.fullName,
-        taskStatus: "VERIFIED",
-      });
+      if (result.isProjectFullyVerified) {
+        // Notify student that the *entire project* is cleared for final publication
+        eventBus.emit(Events.PROJECT_PUBLICATION, {
+          studentEmail: result.projectWithStudent.student.email,
+          studentName: result.projectWithStudent.student.fullName,
+          projectName: result.project.title,
+          supervisorName: (req as any).user.fullName || "Your Supervisor",
+        });
+      } else {
+        // Standard notification for clearing this specific round bundle
+        eventBus.emit(Events.TASK_VERIFIED, {
+          studentEmail: result.projectWithStudent.student.email,
+          studentName: result.projectWithStudent.student.fullName,
+          projectName: result.project.title,
+          taskTitle: `Review round "${reviewId}" successfully verified`,
+          supervisorName: (req as any).user.fullName,
+          taskStatus: "VERIFIED",
+        });
+      }
     }
 
     return res.status(200).json({
-      message: "Review round bundle verified and updated successfully",
-      isProjectApproved: result.isFullyApproved,
+      message: result.isProjectFullyVerified
+        ? "All tasks cleared. Project advanced to VERIFIED and opened for student publication."
+        : "Review round bundle verified and updated successfully",
+      isProjectFullyVerified: result.isProjectFullyVerified,
     });
   } catch (error: any) {
     console.error("verifyReviewRoundBySupervisor error:", error);
@@ -477,6 +507,65 @@ export const verifyReviewRoundBySupervisor = async (
       message: "Failed to verify review round bundle",
       error: error.message,
     });
+  }
+};
+
+export const releaseProjectForPublication = async (
+  req: Request,
+  res: Response,
+) => {
+  const supervisorId = Number((req as any).user.id);
+  const projectId = Number(req.params.projectId);
+
+  try {
+    const project = await db.query.projects.findFirst({
+      where: and(
+        eq(projects.id, projectId),
+        eq(projects.supervisorId, supervisorId),
+      ),
+      with: { student: true },
+    });
+
+    if (!project) {
+      return res
+        .status(404)
+        .json({ message: "Project context profile not found." });
+    }
+
+    // Guard: Prevent double-execution if it is already published
+    if (project.status === "APPROVED") {
+      return res
+        .status(400)
+        .json({ message: "This project is already permanently published." });
+    }
+
+    // Update the state mapping directly to VERIFIED
+    await db
+      .update(projects)
+      .set({
+        status: "VERIFIED",
+        updatedAt: new Date(),
+      })
+      .where(eq(projects.id, projectId));
+
+    if (project.student?.email) {
+      eventBus.emit(Events.PROJECT_PUBLICATION, {
+        studentEmail: project.student.email,
+        studentName: project.student.fullName,
+        projectName: project.title,
+        supervisorName: (req as any).user.fullName || "Your Supervisor",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message:
+        "Project status advanced to VERIFIED. Unlocked student publication paths.",
+    });
+  } catch (error: any) {
+    return res
+      .status(500)
+      .json({ message: "Execution error", error: error.message });
   }
 };
 
@@ -550,11 +639,6 @@ export const deleteTask = async (req: Request, res: Response) => {
     if (!existingTask)
       return res.status(404).json({ message: "Task not found" });
 
-    // Clean up evidence file from Cloudinary if it exists
-    if (existingTask.evidencePublicId) {
-      await cloudinary.uploader.destroy(existingTask.evidencePublicId);
-    }
-
     await db.delete(reviewTasks).where(eq(reviewTasks.id, Number(taskId)));
     return res.status(200).json({ message: "Task deleted successfully" });
   } catch (error) {
@@ -575,16 +659,6 @@ export const deleteReview = async (req: Request, res: Response) => {
     }
 
     await db.transaction(async (tx) => {
-      // Fetch and clean up evidence files
-      const tasks = await tx.query.reviewTasks.findMany({
-        where: eq(reviewTasks.reviewId, Number(reviewId)),
-      });
-      for (const t of tasks) {
-        if (t.evidencePublicId) {
-          await cloudinary.uploader.destroy(t.evidencePublicId);
-        }
-      }
-
       await tx
         .delete(reviewTasks)
         .where(eq(reviewTasks.reviewId, Number(reviewId)));

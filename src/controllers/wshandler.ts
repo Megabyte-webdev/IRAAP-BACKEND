@@ -1,7 +1,12 @@
 import { and, eq, inArray, or } from "drizzle-orm";
 import type { AuthedWebSocket } from "../utils/types/ws.js";
 import type { ClientMessage } from "../utils/types/websocket.js";
-import { conversations, messages, users } from "../database/schema.js";
+import {
+  conversations,
+  meetings,
+  messages,
+  users,
+} from "../database/schema.js";
 import { clients } from "../services/ws.js";
 import { db } from "../config/db.js";
 import { buildMsgsDTO } from "../utils/helper.js";
@@ -64,7 +69,7 @@ async function handleChatSend(
     return sendWsError(ws, "RECIPIENT_NOT_FOUND", "Recipient does not exist.");
   }
   const content = msg.content?.trim() ?? "";
-  const msgType = msg.metadata?.msgType ?? "TEXT";
+  const msgType = msg?.msgType ?? "TEXT";
 
   // Text messages require content
   if (msgType === "TEXT" && !content) {
@@ -104,7 +109,7 @@ async function handleChatSend(
       .then((r) => r[0]);
   }
 
-  let meetingId: null | string = null;
+  let meetingRecord: typeof meetings.$inferSelect | null = null;
   let meetingUrl: null | string = null;
 
   if (msgType === "CALL_INVITE") {
@@ -115,21 +120,39 @@ async function handleChatSend(
         "Only supervisors can schedule meetings.",
       );
     }
+    if (!msg.meeting?.scheduledAt || !msg.meeting?.duration) {
+      return sendWsError(
+        ws,
+        "INVALID_MEETING_DATA",
+        "Meeting date and duration are required.",
+      );
+    }
 
     try {
-      const meeting = await createMeeting({
+      const sdkMeeting = await createMeeting({
         title:
-          msg.metadata?.meetingTitle ?? `Meeting with ${recipient.fullName}`,
+          msg.meeting?.meetingTitle ?? `Meeting with ${recipient.fullName}`,
         createdBy: String(ws.userId),
-        isOpen: msg.metadata?.isOpen ?? true,
+        isOpen: msg.meeting?.isOpen ?? true,
       });
-      console.log("CREATE MEETING RESPONSE:", meeting);
 
-      meetingId = meeting.id;
-      meetingUrl = `${process.env.MEETING_APP_URL}/${meetingId}`;
+      meetingUrl = `${process.env.MEETING_APP_URL}/${sdkMeeting.id}`;
+
+      [meetingRecord] = await db
+        .insert(meetings)
+        .values({
+          meetingId: sdkMeeting.id,
+          conversationId: convo.id,
+          createdBy: ws.userId,
+          title:
+            msg.meeting?.meetingTitle ?? `Meeting with ${recipient.fullName}`,
+          description: msg.meeting?.description ?? null,
+          meetingUrl,
+          scheduledAt: new Date(msg.meeting!.scheduledAt),
+          duration: msg.meeting!.duration,
+        })
+        .returning();
     } catch (error) {
-      console.error("Meeting service unavailable:", error);
-
       return sendWsError(
         ws,
         "MEETING_SERVICE_UNAVAILABLE",
@@ -145,14 +168,7 @@ async function handleChatSend(
       senderId: ws.userId,
       content,
       msgType,
-      meetingId,
-      meetingUrl,
-      scheduledAt:
-        msgType === "CALL_INVITE" && msg.metadata?.scheduledAt
-          ? new Date(msg.metadata.scheduledAt)
-          : null,
-      duration:
-        msgType === "CALL_INVITE" ? (msg.metadata?.duration ?? null) : null,
+      meetingRecordId: meetingRecord?.id ?? null,
       replyToMessageId: msg.replyToMessageId ?? null,
       status: "SENT",
     })
@@ -174,6 +190,7 @@ async function handleChatSend(
       return sendWsError(ws, "INVALID_REPLY", "Reply message not found.");
     }
   }
+
   await db
     .update(conversations)
     .set({
@@ -182,9 +199,19 @@ async function handleChatSend(
       updatedAt: new Date(),
     })
     .where(eq(conversations.id, convo.id));
-  const payload = {
-    ...buildMsgsDTO(saved, reply),
-  };
+
+  const payload = buildMsgsDTO(
+    {
+      ...saved,
+      sender: {
+        id: ws.userId,
+        fullName: ws.fullName,
+        role: ws.userRole,
+      },
+      meeting: meetingRecord,
+    },
+    reply,
+  );
 
   safeSend(ws, {
     type: "chat:message:sent",
@@ -228,16 +255,16 @@ async function handleChatSend(
       },
     });
   }
-  if (msgType === "CALL_INVITE" && msg.metadata?.scheduledAt) {
+  if (msgType === "CALL_INVITE" && msg.meeting?.scheduledAt) {
     try {
       // Email to student
       eventBus.emit(Events.MEETING_SCHEDULED, {
         email: recipient.email,
         recipientName: recipient.fullName,
         supervisorName: ws.fullName,
-        meetingTitle: msg.metadata.meetingTitle ?? "Meeting",
-        scheduledAt: msg.metadata.scheduledAt,
-        duration: msg.metadata.duration,
+        meetingTitle: msg.meeting.meetingTitle ?? "Meeting",
+        scheduledAt: msg.meeting.scheduledAt,
+        duration: msg.meeting.duration,
         meetingUrl: meetingUrl,
         messageId: saved.id,
       });
@@ -247,9 +274,9 @@ async function handleChatSend(
           email: ws.email,
           recipientName: ws.fullName,
           supervisorName: ws.fullName,
-          meetingTitle: msg.metadata.meetingTitle ?? "Meeting",
-          scheduledAt: msg.metadata.scheduledAt,
-          duration: msg.metadata.duration,
+          meetingTitle: msg.meeting.meetingTitle ?? "Meeting",
+          scheduledAt: msg.meeting.scheduledAt,
+          duration: msg.meeting.duration,
           meetingUrl: meetingUrl,
           isSupervisorConfirmation: true,
           messageId: saved.id,

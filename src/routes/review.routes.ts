@@ -5,7 +5,7 @@ import {
   deleteTask,
   getProjectReviewsWithTasks,
   submitRevisionForReview,
-  updateTaskByStudent,
+  updateAllReviewTasksByStudent,
   verifyReviewRoundBySupervisor,
 } from "../controllers/review.controller.js";
 import { authenticate, authorize } from "../middleware/auth.js";
@@ -36,10 +36,10 @@ router.post(
 );
 
 router.patch(
-  "/tasks/:taskId",
+  "/:reviewId",
   authenticate,
   authorize(["STUDENT"]),
-  updateTaskByStudent,
+  updateAllReviewTasksByStudent,
 );
 
 router.patch(

@@ -4,8 +4,9 @@ export type ChatSendMessage = {
   content: string;
   clientId: string;
   replyToMessageId?: number;
-  metadata?: {
-    messageType?: "TEXT" | "CALL_INVITE" | "IMAGE" | "VIDEO" | "FILE";
+  msgType?: "TEXT" | "CALL_INVITE" | "IMAGE" | "VIDEO" | "FILE";
+  meeting?: {
+    msgType?: "TEXT" | "CALL_INVITE" | "IMAGE" | "VIDEO" | "FILE";
     scheduledAt?: string;
     duration?: number;
     meetingTitle?: string;

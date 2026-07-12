@@ -5,8 +5,6 @@ import {
   metadata,
   projects,
   projectVersions,
-  researchTypeEnum,
-  reviews,
   users,
 } from "../database/schema.js";
 import { uploadToCloudinary } from "../utils/fileUpload.js";
@@ -388,6 +386,19 @@ export const getProjectVersionHistory = async (req: Request, res: Response) => {
       );
     }
 
+    console.log({
+      id: projectVersions.id,
+      versionNumber: projectVersions.versionNumber,
+      fileUrl: projectVersions.fileUrl,
+      publicId: projectVersions.publicId,
+      changeNote: projectVersions.changeNote,
+      trigger: projectVersions.trigger,
+      fileSizeBytes: projectVersions.fileSizeBytes,
+      linkedReviewId: projectVersions.linkedReviewId,
+      uploadedBy: users.fullName,
+      createdAt: projectVersions.createdAt,
+    });
+
     const versions = await db
       .select({
         id: projectVersions.id,
@@ -398,7 +409,7 @@ export const getProjectVersionHistory = async (req: Request, res: Response) => {
         trigger: projectVersions.trigger,
         fileSizeBytes: projectVersions.fileSizeBytes,
         linkedReviewId: projectVersions.linkedReviewId,
-        uploadedBy: users.full_name,
+        uploadedBy: users.fullName,
         createdAt: projectVersions.createdAt,
       })
       .from(projectVersions)
@@ -458,7 +469,7 @@ export const getProjectVersion = async (req: Request, res: Response) => {
         trigger: projectVersions.trigger,
         fileSizeBytes: projectVersions.fileSizeBytes,
         linkedReviewId: projectVersions.linkedReviewId,
-        uploadedBy: users.full_name,
+        uploadedBy: users.fullName,
         createdAt: projectVersions.createdAt,
       })
       .from(projectVersions)
@@ -498,7 +509,7 @@ export const getAllProjects = async (req: Request, res: Response) => {
       categoryId,
       status = "APPROVED",
       researchType,
-      keyword, // This handles strings or arrays passed from the frontend query string
+      keyword,
     } = req.query;
 
     const conditions = [

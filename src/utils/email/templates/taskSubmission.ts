@@ -44,7 +44,7 @@ export const taskSubmissionTemplate = (data: {
       max-width: 440px;
       line-height: 1.6;
     ">
-      Hello ${data.supervisorName}, <strong>${data.studentName}</strong> has submitted evidence for task review. Please verify the submission and provide feedback.
+      Hello ${data.supervisorName && data.supervisorName}, <strong>${data.studentName ? data.studentName : "one of your students"}</strong> has submitted evidence for task review. Please verify the submission and provide feedback.
     </p>
 
     <div style="

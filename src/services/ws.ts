@@ -22,15 +22,28 @@ export function initWebSocket(server: any) {
       const token = url.searchParams.get("token");
 
       if (!token) {
-        ws.close(4001, "No token");
+        ws.close(4001, "No token provided");
         return;
       }
 
-      const decoded = jwt.verify(token, process.env.JWT_SECRET!) as {
-        id: number;
-        role: string;
-      };
+      // 1. INLINE JWT VERIFICATION BLOCK
+      let decoded: { id: number; role: string };
+      try {
+        decoded = jwt.verify(token, process.env.JWT_SECRET!) as {
+          id: number;
+          role: string;
+        };
+      } catch (jwtErr: any) {
+        // Log a clean, single-line error instead of a full stack trace
+        console.warn(`[WS] Auth Rejected: ${jwtErr.message}`);
 
+        // 4401 for expired, 4403 for general invalid signature/malformed
+        const closeCode = jwtErr.name === "TokenExpiredError" ? 4401 : 4403;
+        ws.close(closeCode, jwtErr.message);
+        return;
+      }
+
+      // 2. PROCEED WITH USER LOOKUP
       const user = await db.query.users.findFirst({
         where: eq(users.id, decoded.id),
       });
@@ -100,8 +113,9 @@ export function initWebSocket(server: any) {
         }
       });
     } catch (err) {
-      console.error("[WS] connection handler error:", err);
-      ws.close(4003, "Auth failed");
+      // Catches generic internal server issues (like database connection drops)
+      console.error("[WS] Unexpected connection handler internal error:", err);
+      ws.close(1011, "Internal server error");
     }
   });
 }

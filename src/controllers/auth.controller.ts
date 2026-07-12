@@ -1,10 +1,11 @@
 import type { Request, Response } from "express";
 import { db } from "../config/db.js";
-import { users } from "../database/schema.js";
+import { refreshTokens, users } from "../database/schema.js";
 import { eq } from "drizzle-orm";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import { z } from "zod";
+import { generateAccessToken, generateRefreshToken } from "../utils/jwt.js";
 
 // Zod schema for validation
 const loginSchema = z.object({
@@ -45,23 +46,25 @@ export const login = async (req: Request, res: Response) => {
       supervisorName = supervisor?.fullName ?? null;
     }
 
-    // Generate JWT
-    const token = jwt.sign(
-      {
-        id: user.id,
-        role: user.role,
-        supervisorId: user.supervisorId,
-        fullName: user.fullName,
-        email: user.email,
-      },
-      process.env.JWT_SECRET!,
-      { expiresIn: "1d" },
-    );
+    const accessToken = generateAccessToken(user);
 
-    // Respond with token + user info
+    const refreshToken = generateRefreshToken(user.id);
+
+    await db.insert(refreshTokens).values({
+      userId: user.id,
+      token: refreshToken,
+      expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+    });
+    res.cookie("refreshToken", refreshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "strict",
+      maxAge: 30 * 24 * 60 * 60 * 1000,
+    });
+
     return res.json({
       success: true,
-      token,
+      token: accessToken,
       user: {
         id: user.id,
         fullName: user.fullName,
@@ -87,6 +90,60 @@ export const login = async (req: Request, res: Response) => {
     return res.status(500).json({
       success: false,
       message: err.message || "Internal Server Error",
+    });
+  }
+};
+
+export const refreshToken = async (req: Request, res: Response) => {
+  try {
+    const token = req.cookies.refreshToken;
+
+    if (!token) {
+      return res.status(401).json({
+        message: "Refresh token missing",
+      });
+    }
+
+    const storedToken = await db.query.refreshTokens.findFirst({
+      where: eq(refreshTokens.token, token),
+    });
+
+    if (!storedToken) {
+      return res.status(403).json({
+        message: "Invalid refresh token",
+      });
+    }
+
+    jwt.verify(
+      token,
+      process.env.JWT_REFRESH_SECRET!,
+      async (err: any, decoded: any) => {
+        if (err) {
+          return res.status(403).json({
+            message: "Expired refresh token",
+          });
+        }
+
+        const user = await db.query.users.findFirst({
+          where: eq(users.id, decoded.id),
+        });
+
+        if (!user) {
+          return res.status(404).json({
+            message: "User not found",
+          });
+        }
+
+        const accessToken = generateAccessToken(user);
+
+        return res.json({
+          token: accessToken,
+        });
+      },
+    );
+  } catch (error: any) {
+    return res.status(500).json({
+      message: error.message,
     });
   }
 };

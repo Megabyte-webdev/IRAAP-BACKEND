@@ -18,16 +18,19 @@ export function buildMsgsDTO(message: any, reply: any = null) {
     status: message.status,
 
     sender: message.sender,
+    msgType: message.msgType,
 
-    metadata:
+    meeting:
       message.msgType === "CALL_INVITE"
         ? {
             msgType: message.msgType,
-            meetingId: message.meetingId,
-            meetingUrl: message.meetingUrl,
-            scheduledAt: message.scheduledAt,
-            duration: message.duration,
-            meetingTitle: message.meetingTitle,
+            id: message.meeting?.id,
+            meetingId: message.meeting?.meetingId,
+            title: message.meeting?.title,
+            description: message.meeting?.description,
+            meetingUrl: message.meeting?.meetingUrl,
+            scheduledAt: message.meeting?.scheduledAt,
+            duration: message.meeting?.duration,
           }
         : {
             msgType: message.msgType,

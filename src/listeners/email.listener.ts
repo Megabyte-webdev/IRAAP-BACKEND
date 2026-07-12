@@ -212,3 +212,19 @@ eventBus.on(Events.MEETING_SCHEDULED, async (data: any) => {
     );
   }
 });
+
+eventBus.on(Events.PROJECT_PUBLICATION, async (data: any) => {
+  console.log("Listener received", data);
+  const sender = data.senderType || "system";
+  await sendDirectEmail(
+    "PROJECT_PUBLICATION",
+    data.studentEmail,
+    {
+      studentName: data.studentName,
+      projectName: data.projectName,
+      supervisorName: data.supervisorName,
+      dashboardUrl: data.dashboardUrl || "https://iraap.com.ng",
+    },
+    sender,
+  );
+});

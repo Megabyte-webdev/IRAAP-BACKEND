@@ -10,6 +10,7 @@ import {
 } from "../controllers/project.controller.js";
 import { authenticate, authorize } from "../middleware/auth.js";
 import { upload } from "../middleware/upload.js";
+import { releaseProjectForPublication } from "../controllers/review.controller.js";
 
 const router: Router = Router();
 
@@ -55,10 +56,14 @@ router.get(
   getProjectVersion,
 );
 
-// List all approved projects with pagination
-// ?limit=20&offset=0&categoryId=1&status=APPROVED
+router.post(
+  "/:projectId/release",
+  authenticate,
+  authorize(["SUPERVISOR"]),
+  releaseProjectForPublication,
+);
+
 router.get("/", getAllProjects);
-// View public project details (no auth required)
 router.get("/:id", getProjectDetails);
 
 export default router;

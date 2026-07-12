@@ -5,14 +5,12 @@ import {
   text,
   varchar,
   timestamp,
-  pgEnum,
   integer,
   index,
   unique,
   boolean,
 } from "drizzle-orm/pg-core";
-
-// ENUMS
+import { pgEnum } from "drizzle-orm/pg-core";
 
 export const roleEnum = pgEnum("role", ["STUDENT", "SUPERVISOR", "ADMIN"]);
 
@@ -20,6 +18,7 @@ export const statusEnum = pgEnum("status", [
   "PENDING",
   "APPROVED",
   "REJECTED",
+  "VERIFIED",
   "REVISION_REQUESTED",
 ]);
 
@@ -59,6 +58,12 @@ export const versionTriggerEnum = pgEnum("version_trigger", [
   "INITIAL_SUBMISSION",
   "STUDENT_UPDATE",
   "REVISION_SUBMISSION",
+]);
+export const meetingStatusEnum = pgEnum("meeting_status", [
+  "SCHEDULED",
+  "ONGOING",
+  "COMPLETED",
+  "CANCELLED",
 ]);
 
 export const users = pgTable(
@@ -143,6 +148,10 @@ export const projects = pgTable(
     categoryId: integer("category_id").references(() => categories.id),
     researchType: researchTypeEnum("research_type")
       .default("INDEPENDENT_RESEARCH")
+      .notNull(),
+
+    isSignaledForPublication: boolean("is_signaled_for_publication")
+      .default(false)
       .notNull(),
     status: statusEnum("status").default("PENDING").notNull(),
 
@@ -255,11 +264,6 @@ export const reviewTasks = pgTable(
 
     status: reviewTaskStatusEnum("status").default("PENDING").notNull(),
 
-    studentNote: text("student_note"),
-
-    evidenceFileUrl: text("evidence_file_url"),
-    evidencePublicId: text("evidence_public_id"),
-
     completedAt: timestamp("completed_at"),
 
     verifiedBy: integer("verified_by").references(() => users.id),
@@ -342,16 +346,7 @@ export const messages = pgTable(
       () => messages.id,
     ),
     msgType: messageTypeEnum("msgType").notNull().default("TEXT"),
-    meetingId: varchar("meetingId", {
-      length: 255,
-    }),
-    meetingUrl: text("meetingUrl"),
-    scheduledAt: timestamp("scheduled_at", {
-      withTimezone: true,
-      mode: "date",
-    }),
-
-    duration: integer("duration"),
+    meetingRecordId: integer("meeting_record_id").references(() => meetings.id),
     readAt: timestamp("read_at"),
     createdAt: timestamp("created_at").defaultNow(),
     status: messageStatusEnum("status").default("SENT").notNull(),
@@ -364,6 +359,46 @@ export const messages = pgTable(
     ),
   }),
 );
+
+export const meetings = pgTable("meetings", {
+  id: serial("id").primaryKey(),
+  meetingId: varchar("meeting_id", { length: 100 }).notNull().unique(),
+  conversationId: integer("conversation_id")
+    .references(() => conversations.id, {
+      onDelete: "cascade",
+    })
+    .notNull(),
+  createdBy: integer("created_by")
+    .references(() => users.id)
+    .notNull(),
+  title: varchar("title", { length: 255 }).notNull(),
+  description: text("description"),
+  meetingUrl: text("meeting_url").notNull(),
+  scheduledAt: timestamp("scheduled_at").notNull(),
+  duration: integer("duration").notNull(),
+  status: meetingStatusEnum("status").default("SCHEDULED").notNull(),
+  startedAt: timestamp("started_at"),
+  endedAt: timestamp("ended_at"),
+  cancelledAt: timestamp("cancelled_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const refreshTokens = pgTable("refresh_tokens", {
+  id: serial("id").primaryKey(),
+
+  userId: integer("user_id")
+    .notNull()
+    .references(() => users.id, {
+      onDelete: "cascade",
+    }),
+
+  token: text("token").notNull().unique(),
+
+  expiresAt: timestamp("expires_at").notNull(),
+
+  createdAt: timestamp("created_at").defaultNow(),
+});
 
 export const usersRelations = relations(users, ({ many }) => ({
   projects: many(projects),
@@ -466,6 +501,7 @@ export const conversationsRelations = relations(
       references: [users.id],
     }),
     messages: many(messages),
+    meetings: many(meetings),
     lastMessage: one(messages, {
       fields: [conversations.lastMessageId],
       references: [messages.id],
@@ -486,6 +522,21 @@ export const messagesRelations = relations(messages, ({ one }) => ({
     fields: [messages.replyToMessageId],
     references: [messages.id],
   }),
+  meeting: one(meetings, {
+    fields: [messages.meetingRecordId],
+    references: [meetings.id],
+  }),
+}));
+export const meetingsRelations = relations(meetings, ({ one, many }) => ({
+  conversation: one(conversations, {
+    fields: [meetings.conversationId],
+    references: [conversations.id],
+  }),
+  creator: one(users, {
+    fields: [meetings.createdBy],
+    references: [users.id],
+  }),
+  messages: many(messages),
 }));
 
 export const publicationRequestsRelations = relations(

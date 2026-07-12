@@ -9,6 +9,7 @@ import { supervisorAssignedTemplate } from "./templates/supervisorAssigned.js";
 import { supervisorAllocationTemplate } from "./templates/supervisorAllocation.js";
 import { meetingScheduledTemplate } from "./templates/meetingScheduled.js";
 import { meetingReminderTemplate } from "./templates/meetingReminder.js";
+import { projectSignaledTemplate } from "./templates/projectSignal.js";
 
 export const getEmailData = (type: string, payload: any) => {
   const frontendUrl = "https://iraap.com.ng";
@@ -90,6 +91,15 @@ export const getEmailData = (type: string, payload: any) => {
       return {
         subject: `[IRAAP] Reminder: Meeting in 1 hour - ${payload.meetingTitle}`,
         html: meetingReminderTemplate(payload),
+      };
+
+    case "PROJECT_PUBLICATION":
+      return {
+        subject: `[IRAAP] Project Cleared and Released for Publication`,
+        html: projectSignaledTemplate({
+          ...payload,
+          dashboardUrl: frontendUrl,
+        }),
       };
 
     default:

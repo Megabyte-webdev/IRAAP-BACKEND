@@ -1,5 +1,5 @@
 import type { Request, Response } from "express";
-import { and, desc, eq, lt, or, ne, sql } from "drizzle-orm";
+import { and, desc, eq, lt, or, ne, sql, inArray } from "drizzle-orm";
 import { db } from "../config/db.js";
 import { conversations, messages, users } from "../database/schema.js";
 import { withPagination } from "../utils/pagination.js";
@@ -49,10 +49,9 @@ export async function getConversations(req: Request, res: Response) {
               senderId: true,
               createdAt: true,
               msgType: true,
-              meetingId: true,
-              meetingUrl: true,
-              scheduledAt: true,
-              duration: true,
+            },
+            with: {
+              meeting: true,
             },
           },
         },
@@ -260,25 +259,35 @@ export async function getMessages(
     ),
     with: {
       sender: {
-        columns: { id: true, fullName: true, role: true },
+        columns: {
+          id: true,
+          fullName: true,
+          role: true,
+        },
       },
+
+      meeting: true,
+
       replyTo: {
         with: {
           sender: {
-            columns: { id: true, fullName: true, role: true },
+            columns: {
+              id: true,
+              fullName: true,
+              role: true,
+            },
           },
+
+          meeting: true,
         },
+
         columns: {
           id: true,
           conversationId: true,
           senderId: true,
           content: true,
           msgType: true,
-          meetingId: true,
-          meetingUrl: true,
           replyToMessageId: true,
-          duration: true,
-          scheduledAt: true,
           readAt: true,
           createdAt: true,
           status: true,
@@ -305,5 +314,59 @@ export async function getMessages(
       hasMore,
       nextCursor: hasMore ? msgs[0].id : null,
     },
+  });
+}
+
+export async function getScheduledMeetings(req: Request, res: Response) {
+  const userId = req.user!.id;
+
+  const userConversations = await db.query.conversations.findMany({
+    where: or(
+      eq(conversations.supervisorId, userId),
+      eq(conversations.studentId, userId),
+    ),
+    columns: {
+      id: true,
+    },
+  });
+
+  const conversationIds = userConversations.map((c) => c.id);
+
+  if (!conversationIds.length) {
+    return res.json([]);
+  }
+
+  const meetings = await db.query.messages.findMany({
+    where: and(
+      inArray(messages.conversationId, conversationIds),
+      eq(messages.msgType, "CALL_INVITE"),
+    ),
+
+    with: {
+      sender: {
+        columns: {
+          id: true,
+          fullName: true,
+          role: true,
+        },
+      },
+
+      meeting: true,
+    },
+
+    orderBy: desc(messages.createdAt),
+  });
+
+  return res.json({
+    data: meetings.map((m) => ({
+      id: m.id,
+      title: m.meeting?.title ?? m.content,
+      meetingId: m.meeting?.meetingId,
+      meetingUrl: m.meeting?.meetingUrl,
+      scheduledAt: m.meeting?.scheduledAt,
+      duration: m.meeting?.duration,
+      sender: m.sender,
+      conversationId: m.conversationId,
+    })),
   });
 }
