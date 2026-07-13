@@ -1,16 +1,5 @@
 import type { Request, Response } from "express";
-import {
-  and,
-  desc,
-  eq,
-  lt,
-  or,
-  ne,
-  sql,
-  inArray,
-  aliasedTable,
-  gte,
-} from "drizzle-orm";
+import { and, desc, eq, lt, or, ne, sql, aliasedTable, asc } from "drizzle-orm";
 import { db } from "../config/db.js";
 import {
   conversations,
@@ -400,7 +389,8 @@ export async function getScheduledMeetings(req: Request, res: Response) {
         })
         .from(meetings)
         .innerJoin(conversations, eq(meetings.conversationId, conversations.id))
-        .where(whereClause),
+        .where(whereClause)
+        .orderBy(asc(meetings.scheduledAt)),
     });
 
     const data = result.data.map((row) => ({

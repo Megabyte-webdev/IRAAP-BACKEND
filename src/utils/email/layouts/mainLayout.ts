@@ -27,7 +27,7 @@ export const mainLayout = (content: string) => {
           <tr>
             <td align="center" style="padding: 32px 20px; background-color: #4f46e5;">
               <img src="https://iraap.com.ng/irap-logo.png" alt="IRAP Logo" width="70" style="display: block; margin-bottom: 12px; border: 0;">
-              <h1 style="color: #ffffff; font-size: 22px; margin: 0; letter-spacing: 0.5px; font-weight: 800;">IRAP Repository</h1>
+              <h1 style="color: #ffffff; font-size: 22px; margin: 0; letter-spacing: 0.5px; font-weight: 800;">IRAAP Repository</h1>
             </td>
           </tr>
 
