@@ -7,6 +7,7 @@ import reviewRoutes from "./src/routes/review.routes.js";
 import adminRoutes from "./src/routes/admin.routes.js";
 import supervisorRoutes from "./src/routes/supervisor.routes.js";
 import chatRoutes from "./src/routes/chat.routes.js";
+import meetingRoutes from "./src/routes/meeting.routes.js";
 import cors from "cors";
 import { applyGlobalSecurity } from "./src/middleware/rateLimiter.js";
 import "./src/listeners/email.listener.js";
@@ -16,6 +17,7 @@ import http from "http";
 import { initWebSocket } from "./src/services/ws.js";
 import { saveSubscription } from "./src/utils/pushStore.js";
 import bodyParser from "body-parser";
+import cookieParser from "cookie-parser";
 import publicationRoutes from "./src/routes/publication.routes.js";
 dotenv.config();
 
@@ -30,6 +32,7 @@ app.use(cors({ origin: allowedOrigins, credentials: true }));
 
 applyGlobalSecurity(app);
 
+app.use(cookieParser());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(bodyParser.json());
@@ -50,6 +53,8 @@ app.use("/reviews", reviewRoutes);
 app.use("/admin", adminRoutes);
 app.use("/supervisor", supervisorRoutes);
 app.use("/chat", chatRoutes);
+app.use("/meetings", meetingRoutes);
+
 app.post("/push/subscribe", (req, res) => {
   const { userId, subscription } = req.body;
   console.log("SUBSCRIBE HIT", userId, subscription);

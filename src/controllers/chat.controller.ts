@@ -1,7 +1,23 @@
 import type { Request, Response } from "express";
-import { and, desc, eq, lt, or, ne, sql, inArray } from "drizzle-orm";
+import {
+  and,
+  desc,
+  eq,
+  lt,
+  or,
+  ne,
+  sql,
+  inArray,
+  aliasedTable,
+  gte,
+} from "drizzle-orm";
 import { db } from "../config/db.js";
-import { conversations, messages, users } from "../database/schema.js";
+import {
+  conversations,
+  meetings,
+  messages,
+  users,
+} from "../database/schema.js";
 import { withPagination } from "../utils/pagination.js";
 import { buildMessagePreviewDTO, buildMsgsDTO } from "../utils/helper.js";
 
@@ -318,55 +334,116 @@ export async function getMessages(
 }
 
 export async function getScheduledMeetings(req: Request, res: Response) {
-  const userId = req.user!.id;
+  try {
+    const userId = req.user!.id;
 
-  const userConversations = await db.query.conversations.findMany({
-    where: or(
+    const page = Number(req.query.page) || 1;
+    const limit = Math.min(Number(req.query.limit) || 20, 50);
+
+    const studentUser = aliasedTable(users, "student_user");
+    const supervisorUser = aliasedTable(users, "supervisor_user");
+    const creatorUser = aliasedTable(users, "creator_user");
+
+    const whereClause = or(
       eq(conversations.supervisorId, userId),
       eq(conversations.studentId, userId),
-    ),
-    columns: {
-      id: true,
-    },
-  });
+    );
 
-  const conversationIds = userConversations.map((c) => c.id);
+    const result = await withPagination({
+      page,
+      limit,
 
-  if (!conversationIds.length) {
-    return res.json([]);
-  }
+      dataQuery: (limit, offset) =>
+        db
+          .select({
+            id: meetings.id,
+            meetingId: meetings.meetingId,
+            title: meetings.title,
+            description: meetings.description,
+            meetingUrl: meetings.meetingUrl,
+            scheduledAt: meetings.scheduledAt,
+            duration: meetings.duration,
+            status: meetings.status,
+            conversationId: meetings.conversationId,
 
-  const meetings = await db.query.messages.findMany({
-    where: and(
-      inArray(messages.conversationId, conversationIds),
-      eq(messages.msgType, "CALL_INVITE"),
-    ),
+            creatorId: creatorUser.id,
+            creatorName: creatorUser.fullName,
+            creatorRole: creatorUser.role,
 
-    with: {
-      sender: {
-        columns: {
-          id: true,
-          fullName: true,
-          role: true,
-        },
+            studentId: studentUser.id,
+            studentName: studentUser.fullName,
+            studentEmail: studentUser.email,
+
+            supervisorId: supervisorUser.id,
+            supervisorName: supervisorUser.fullName,
+            supervisorEmail: supervisorUser.email,
+          })
+          .from(meetings)
+          .innerJoin(
+            conversations,
+            eq(meetings.conversationId, conversations.id),
+          )
+          .innerJoin(creatorUser, eq(meetings.createdBy, creatorUser.id))
+          .innerJoin(studentUser, eq(conversations.studentId, studentUser.id))
+          .innerJoin(
+            supervisorUser,
+            eq(conversations.supervisorId, supervisorUser.id),
+          )
+          .where(whereClause)
+          .orderBy(desc(meetings.scheduledAt))
+          .limit(limit)
+          .offset(offset),
+
+      countQuery: db
+        .select({
+          count: sql<number>`count(*)`,
+        })
+        .from(meetings)
+        .innerJoin(conversations, eq(meetings.conversationId, conversations.id))
+        .where(whereClause),
+    });
+
+    const data = result.data.map((row) => ({
+      id: row.id,
+      meetingId: row.meetingId,
+      title: row.title,
+      description: row.description,
+      meetingUrl: row.meetingUrl,
+      scheduledAt: row.scheduledAt,
+      duration: row.duration,
+      status: row.status,
+      conversationId: row.conversationId,
+
+      creator: {
+        id: row.creatorId,
+        fullName: row.creatorName,
+        role: row.creatorRole,
       },
 
-      meeting: true,
-    },
+      participants: {
+        student: {
+          id: row.studentId,
+          fullName: row.studentName,
+          email: row.studentEmail,
+        },
 
-    orderBy: desc(messages.createdAt),
-  });
+        supervisor: {
+          id: row.supervisorId,
+          fullName: row.supervisorName,
+          email: row.supervisorEmail,
+        },
+      },
+    }));
 
-  return res.json({
-    data: meetings.map((m) => ({
-      id: m.id,
-      title: m.meeting?.title ?? m.content,
-      meetingId: m.meeting?.meetingId,
-      meetingUrl: m.meeting?.meetingUrl,
-      scheduledAt: m.meeting?.scheduledAt,
-      duration: m.meeting?.duration,
-      sender: m.sender,
-      conversationId: m.conversationId,
-    })),
-  });
+    return res.status(200).json({
+      data,
+      pagination: result.pagination,
+    });
+  } catch (error) {
+    console.error("Error fetching user schedule:", error);
+
+    return res.status(500).json({
+      error: "Failed to retrieve scheduled sessions.",
+    });
+  }
 }

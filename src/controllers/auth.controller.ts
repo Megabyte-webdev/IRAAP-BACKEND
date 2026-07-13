@@ -142,6 +142,8 @@ export const refreshToken = async (req: Request, res: Response) => {
       },
     );
   } catch (error: any) {
+    console.error(error);
+
     return res.status(500).json({
       message: error.message,
     });
