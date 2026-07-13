@@ -379,7 +379,7 @@ export async function getScheduledMeetings(req: Request, res: Response) {
             eq(conversations.supervisorId, supervisorUser.id),
           )
           .where(whereClause)
-          .orderBy(desc(meetings.scheduledAt))
+          .orderBy(asc(meetings.scheduledAt))
           .limit(limit)
           .offset(offset),
 
@@ -389,8 +389,7 @@ export async function getScheduledMeetings(req: Request, res: Response) {
         })
         .from(meetings)
         .innerJoin(conversations, eq(meetings.conversationId, conversations.id))
-        .where(whereClause)
-        .orderBy(asc(meetings.scheduledAt)),
+        .where(whereClause),
     });
 
     const data = result.data.map((row) => ({
