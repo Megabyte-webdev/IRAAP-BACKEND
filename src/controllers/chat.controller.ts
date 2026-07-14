@@ -1,5 +1,15 @@
 import type { Request, Response } from "express";
-import { and, desc, eq, lt, or, ne, sql, aliasedTable, asc } from "drizzle-orm";
+import {
+  and,
+  desc,
+  eq,
+  lt,
+  or,
+  ne,
+  aliasedTable,
+  asc,
+  count,
+} from "drizzle-orm";
 import { db } from "../config/db.js";
 import {
   conversations,
@@ -59,6 +69,16 @@ export async function getConversations(req: Request, res: Response) {
               meeting: true,
             },
           },
+
+          messages: {
+            where: and(
+              ne(messages.senderId, userId),
+              ne(messages.status, "READ"),
+            ),
+            columns: {
+              id: true,
+            },
+          },
         },
 
         orderBy: desc(conversations.updatedAt),
@@ -69,7 +89,7 @@ export async function getConversations(req: Request, res: Response) {
 
     countQuery: db
       .select({
-        count: sql<number>`count(*)`,
+        count: count(),
       })
       .from(conversations)
       .where(
@@ -83,7 +103,7 @@ export async function getConversations(req: Request, res: Response) {
   const conversationsList = result.data.map((conversation) => ({
     id: conversation.id,
 
-    participant:
+    user:
       conversation.supervisorId === userId
         ? conversation.student
         : conversation.supervisor,
@@ -91,6 +111,8 @@ export async function getConversations(req: Request, res: Response) {
     lastMessage: conversation.lastMessage
       ? buildMessagePreviewDTO(conversation.lastMessage)
       : null,
+
+    unreadCount: conversation.messages?.length ?? 0,
 
     updatedAt: conversation.updatedAt,
   }));
@@ -179,7 +201,7 @@ export async function getChatableUsers(req: Request, res: Response) {
 
     countQuery: db
       .select({
-        count: sql<number>`count(*)`,
+        count: count(),
       })
       .from(users)
       .where(whereClause),
@@ -385,7 +407,7 @@ export async function getScheduledMeetings(req: Request, res: Response) {
 
       countQuery: db
         .select({
-          count: sql<number>`count(*)`,
+          count: count(),
         })
         .from(meetings)
         .innerJoin(conversations, eq(meetings.conversationId, conversations.id))
