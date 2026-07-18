@@ -6,7 +6,7 @@ import { eq } from "drizzle-orm";
 import { sendEmail } from "../services/mail.js";
 import { getEmailData } from "../utils/email/engine.js";
 
-new Worker(
+const worker = new Worker(
   "meeting-reminder",
   async (job) => {
     console.log("Processing meeting reminder:", job.data);
@@ -72,3 +72,11 @@ new Worker(
     connection: redisConnection,
   },
 );
+
+worker.on("completed", (job) => {
+  console.log("Reminder completed", job.id);
+});
+
+worker.on("failed", (job, err) => {
+  console.error("Reminder failed", job?.id, err);
+});

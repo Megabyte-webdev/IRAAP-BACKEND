@@ -261,6 +261,7 @@ async function handleChatSend(
       eventBus.emit(Events.MEETING_SCHEDULED, {
         email: recipient.email,
         recipientName: recipient.fullName,
+        recipientType: recipient.role,
         supervisorName: ws.fullName,
         meetingTitle: msg.meeting.meetingTitle ?? "Meeting",
         scheduledAt: msg.meeting.scheduledAt,
@@ -273,6 +274,7 @@ async function handleChatSend(
         eventBus.emit(Events.MEETING_SCHEDULED, {
           email: ws.email,
           recipientName: ws.fullName,
+          recipientType: ws.userRole,
           supervisorName: ws.fullName,
           meetingTitle: msg.meeting.meetingTitle ?? "Meeting",
           scheduledAt: msg.meeting.scheduledAt,

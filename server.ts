@@ -12,6 +12,7 @@ import cors from "cors";
 import { applyGlobalSecurity } from "./src/middleware/rateLimiter.js";
 import "./src/listeners/email.listener.js";
 import "./src/workers/email.worker.js";
+import "./src/workers/meetingReminder.worker.js";
 import { testDbConnection } from "./src/config/db.js";
 import http from "http";
 import { initWebSocket } from "./src/services/ws.js";

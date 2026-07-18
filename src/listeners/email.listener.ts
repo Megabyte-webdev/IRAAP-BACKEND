@@ -13,12 +13,19 @@ const sendDirectEmail = async (
   const emailInfo = getEmailData(type, payload);
   if (!emailInfo) return;
 
-  await emailQueue.add("send-email", {
-    type,
-    to,
-    payload,
-    senderType: senderType || "system",
-  });
+  await emailQueue.add(
+    "send-email",
+    {
+      type,
+      to,
+      payload,
+      senderType: senderType || "system",
+    },
+    {
+      removeOnComplete: true,
+      removeOnFail: 100,
+    },
+  );
 
   console.log(`Queued email to ${to} for ${type}`);
 };
@@ -162,12 +169,21 @@ eventBus.on(Events.MEETING_SCHEDULED, async (data: any) => {
 
   const scheduledDate = new Date(data.scheduledAt);
 
+  console.log("MEETING TIME:", scheduledDate);
+  console.log("CURRENT TIME:", new Date());
+
   const reminderOffsets = getReminderTimes(scheduledDate);
+  console.log("REMINDER OFFSETS:", reminderOffsets);
 
   for (const minutes of reminderOffsets) {
     const reminderTime = scheduledDate.getTime() - minutes * 60 * 1000;
 
     const delay = reminderTime - Date.now();
+    console.log({
+      minutes,
+      reminderTime: new Date(reminderTime),
+      delay,
+    });
 
     if (delay <= 0) {
       continue;
@@ -179,6 +195,7 @@ eventBus.on(Events.MEETING_SCHEDULED, async (data: any) => {
       {
         messageId: data.messageId,
         email: data.email,
+        recipientType: "STUDENT",
         recipientName: data.recipientName,
         supervisorName: data.supervisorName,
         meetingTitle: data.meetingTitle,
@@ -189,6 +206,8 @@ eventBus.on(Events.MEETING_SCHEDULED, async (data: any) => {
       {
         delay,
         jobId: `meeting-${data.messageId}-student-${minutes}`,
+        removeOnComplete: true,
+        removeOnFail: 100,
       },
     );
 
@@ -199,6 +218,7 @@ eventBus.on(Events.MEETING_SCHEDULED, async (data: any) => {
         messageId: data.messageId,
         email: data.supervisorEmail || data.email,
         recipientName: data.supervisorName,
+        recipientType: "SUPERVISOR",
         supervisorName: data.supervisorName,
         meetingTitle: data.meetingTitle,
         meetingUrl: data.meetingUrl,
@@ -208,6 +228,8 @@ eventBus.on(Events.MEETING_SCHEDULED, async (data: any) => {
       {
         delay,
         jobId: `meeting-${data.messageId}-supervisor-${minutes}`,
+        removeOnComplete: true,
+        removeOnFail: 100,
       },
     );
   }
