@@ -1,7 +1,5 @@
 import { WebSocketServer } from "ws";
 import jwt from "jsonwebtoken";
-import { db } from "../config/db.js";
-import { eq } from "drizzle-orm";
 import type { AuthedWebSocket } from "../utils/types/ws.js";
 import { users } from "../database/schema.js";
 import {
@@ -11,6 +9,12 @@ import {
 import { broadcastPresence, handlePresenceList } from "./presence.js";
 
 type ClientMap = Map<number, AuthedWebSocket>;
+interface JWTPayload {
+  id: number;
+  role: "STUDENT" | "SUPERVISOR" | "ADMIN";
+  fullName: string;
+  email: string;
+}
 export const clients: ClientMap = new Map();
 
 export function initWebSocket(server: any) {
@@ -27,51 +31,35 @@ export function initWebSocket(server: any) {
       }
 
       // 1. INLINE JWT VERIFICATION BLOCK
-      let decoded: { id: number; role: string };
+      let decoded: JWTPayload;
       try {
-        decoded = jwt.verify(token, process.env.JWT_SECRET!) as {
-          id: number;
-          role: string;
-        };
+        decoded = jwt.verify(token, process.env.JWT_SECRET!) as JWTPayload;
       } catch (jwtErr: any) {
-        // Log a clean, single-line error instead of a full stack trace
         console.warn(`[WS] Auth Rejected: ${jwtErr.message}`);
-
-        // 4401 for expired, 4403 for general invalid signature/malformed
         const closeCode = jwtErr.name === "TokenExpiredError" ? 4401 : 4403;
         ws.close(closeCode, jwtErr.message);
         return;
       }
 
-      // 2. PROCEED WITH USER LOOKUP
-      const user = await db.query.users.findFirst({
-        where: eq(users.id, decoded.id),
-      });
-
-      if (!user) {
-        ws.close(4002, "Invalid user");
-        return;
-      }
-
-      ws.userId = user.id;
-      ws.userRole = user.role;
-      ws.fullName = user.fullName;
-      ws.email = user.email;
+      ws.userId = decoded.id;
+      ws.userRole = decoded.role;
+      ws.fullName = decoded.fullName;
+      ws.email = decoded.email;
 
       // Close stale socket — but mark it so its close handler
       // does NOT broadcast offline (we're immediately replacing it)
-      const existing = clients.get(user.id);
+      const existing = clients.get(decoded.id);
       if (existing && existing !== ws) {
         (existing as any)._replaced = true;
         existing.close(4010, "Replaced by newer connection");
       }
 
-      clients.set(user.id, ws);
-      console.log(`WS connected: ${user.id} (${user.role})`);
+      clients.set(decoded.id, ws);
+      console.log(`WS connected: ${decoded.id} (${decoded.role})`);
 
       // Wrap async work so an error here doesn't crash the connection handler
       try {
-        await broadcastPresence(user.id, user.role, "online");
+        await broadcastPresence(decoded.id, decoded.role, "online");
       } catch (err) {
         console.error("[WS] broadcastPresence error:", err);
       }
@@ -97,16 +85,16 @@ export function initWebSocket(server: any) {
 
       ws.on("close", async (code, reason) => {
         console.log(
-          `WS close: ${user.id} code=${code} reason=${reason?.toString()}`,
+          `WS close: ${decoded.id} code=${code} reason=${reason?.toString()}`,
         );
 
         // Don't broadcast offline if this socket was replaced by a newer one
         if ((ws as any)._replaced) return;
 
-        if (clients.get(user.id) === ws) {
-          clients.delete(user.id);
+        if (clients.get(decoded.id) === ws) {
+          clients.delete(decoded.id);
           try {
-            await broadcastPresence(user.id, user.role, "offline");
+            await broadcastPresence(decoded.id, decoded.role, "offline");
           } catch (err) {
             console.error("[WS] offline broadcastPresence error:", err);
           }
