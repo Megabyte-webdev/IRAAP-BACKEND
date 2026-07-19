@@ -145,7 +145,9 @@ async function handleChatSend(
           conversationId: convo.id,
           createdBy: ws.userId,
           title:
-            msg.meeting?.meetingTitle ?? `Meeting with ${recipient.fullName}`,
+            content ??
+            msg.meeting?.meetingTitle ??
+            `Meeting with ${recipient.fullName}`,
           description: msg.meeting?.description ?? null,
           meetingUrl,
           scheduledAt: new Date(msg.meeting!.scheduledAt),
