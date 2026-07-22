@@ -45,6 +45,12 @@ app.use((err, _req, res, _next) => {
     .json({ message: err.message || "Internal Server Error" });
 });
 
+
+//Ping endpoint for Render health checks or external pinger
+app.get("/ping", (_req, res) => {
+  res.status(200).send("pong");
+});
+
 // Use routes
 app.use("/auth", authRoutes);
 app.use("/projects", projectRoutes);
@@ -78,8 +84,29 @@ app.get("/", (req, res) => {
 const server = http.createServer(app);
 initWebSocket(server);
 
+// Self-ping keeping Render alive every 12 minutes
+const startSelfPing = () => {
+  const SERVER_URL = process.env.SERVER_URL; // e.g. "https://your-app.onrender.com"
+  if (!SERVER_URL) return;
+
+  const FOURTEEN_MINUTES = 12 * 60 * 1000;
+  const client = SERVER_URL.startsWith("https") ? https : http;
+
+  setInterval(() => {
+    client
+      .get(`${SERVER_URL}/ping`, (res) => {
+        console.log(`Self-ping status: ${res.statusCode}`);
+      })
+      .on("error", (err) => {
+        console.error("Self-ping failed:", err.message);
+      });
+  }, FOURTEEN_MINUTES);
+};
+  
+
 server.listen(Number(port), "0.0.0.0", () => {
   testDbConnection();
+  startSelfPing()
 
   // Log the port specifically for Railway debugging
   console.log(
