@@ -56,7 +56,7 @@ export const login = async (req: Request, res: Response) => {
       expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
     });
     const isLocalhostClient = req.headers.origin?.includes("localhost");
-    res.cookie("bouwnceRefreshToken", refreshToken, {
+    res.cookie("IRAAPRefreshToken", refreshToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
      sameSite: isLocalhostClient ? "none" : (process.env.NODE_ENV === "production" ? "strict" : "lax"),
@@ -97,7 +97,7 @@ export const login = async (req: Request, res: Response) => {
 
 export const refreshToken = async (req: Request, res: Response) => {
   try {
-    const token = req.cookies.bouwnceRefreshToken;
+    const token = req.cookies.IRAAPRefreshToken;
 
     if (!token) {
       return res.status(401).json({
