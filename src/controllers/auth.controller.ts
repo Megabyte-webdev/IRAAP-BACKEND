@@ -55,11 +55,11 @@ export const login = async (req: Request, res: Response) => {
       token: refreshToken,
       expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
     });
-    const isLocalhostClient = req.headers.origin?.includes("localhost");
+    const isProduction = process.env.NODE_ENV === "production";
     res.cookie("IRAAPRefreshToken", refreshToken, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-     sameSite: isLocalhostClient ? "none" : (process.env.NODE_ENV === "production" ? "strict" : "lax"),
+      secure: isProduction,
+      sameSite: isProduction ? "none" : "lax",
       maxAge: 30 * 24 * 60 * 60 * 1000,
     });
 
