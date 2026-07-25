@@ -131,7 +131,9 @@ async function handleChatSend(
     try {
       const sdkMeeting = await createMeeting({
         title:
-          msg.meeting?.meetingTitle ?? `Meeting with ${recipient.fullName}`,
+          content ??
+          msg.meeting?.meetingTitle ??
+          `Meeting with ${recipient.fullName}`,
         createdBy: String(ws.userId),
         isOpen: msg.meeting?.isOpen ?? true,
       });
