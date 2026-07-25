@@ -33,8 +33,8 @@ app.use(cors({ origin: allowedOrigins, credentials: true }));
 
 applyGlobalSecurity(app);
 
-app.use(cookieParser());
 app.use(express.json());
+app.use(cookieParser());
 app.use(express.urlencoded({ extended: true }));
 app.use(bodyParser.json());
 

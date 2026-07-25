@@ -55,10 +55,10 @@ export const login = async (req: Request, res: Response) => {
       token: refreshToken,
       expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
     });
-    res.cookie("refreshToken", refreshToken, {
+    res.cookie("bouwnceRefreshToken", refreshToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
-      sameSite: "strict",
+      sameSite: process.env.NODE_ENV === "production" ? "strict" : "lax",
       maxAge: 30 * 24 * 60 * 60 * 1000,
     });
 
@@ -96,7 +96,7 @@ export const login = async (req: Request, res: Response) => {
 
 export const refreshToken = async (req: Request, res: Response) => {
   try {
-    const token = req.cookies.refreshToken;
+    const token = req.cookies.bouwnceRefreshToken;
 
     if (!token) {
       return res.status(401).json({
