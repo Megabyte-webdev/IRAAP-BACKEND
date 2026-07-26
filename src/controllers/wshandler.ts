@@ -207,7 +207,7 @@ async function handleChatSend(
   const payload = buildMsgsDTO(
     {
       ...saved,
-      sender: {
+      creator: {
         id: ws.userId,
         fullName: ws.fullName,
         role: ws.userRole,
