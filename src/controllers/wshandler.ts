@@ -222,6 +222,27 @@ async function handleChatSend(
         }
       : null;
 
+  const meetingPayload =
+    meetingRecord && msgType === "CALL_INVITE"
+      ? {
+          ...meetingRecord,
+          participants: {
+            supervisor: {
+              id: ws.userId,
+              fullName: ws.fullName,
+              email: ws.email,
+              role: ws.userRole,
+            },
+            student: {
+              id: recipient.id,
+              fullName: recipient.fullName,
+              email: recipient.email,
+              role: recipient.role,
+            },
+          },
+        }
+      : meetingRecord;
+
   const payload = buildMsgsDTO(
     {
       ...saved,
@@ -230,19 +251,15 @@ async function handleChatSend(
         fullName: ws.fullName,
         role: ws.userRole,
       },
-      meeting: meetingRecord,
+      meeting: meetingPayload,
     },
     reply,
   );
 
-  const messagePayload = {
-    ...payload,
-    ...(participants && { participants }),
-  };
   safeSend(ws, {
     type: "chat:message:sent",
     payload: {
-      ...messagePayload,
+      ...payload,
       clientId: msg.clientId,
     },
   });
@@ -251,11 +268,11 @@ async function handleChatSend(
   if (recipientSocket) {
     safeSend(recipientSocket, {
       type: "chat:message",
-      messagePayload,
+      payload,
     });
     try {
       await sendPushNotification({
-        senderId: messagePayload.senderId,
+        senderId: payload.senderId,
         receiverId: msg.recipientId,
         senderName: ws.fullName,
         message: content,
