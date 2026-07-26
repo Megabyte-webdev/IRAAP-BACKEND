@@ -1,7 +1,6 @@
 import { WebSocketServer } from "ws";
 import jwt from "jsonwebtoken";
 import type { AuthedWebSocket } from "../utils/types/ws.js";
-import { users } from "../database/schema.js";
 import {
   handleMessage,
   flushPendingMessages,
@@ -19,8 +18,28 @@ export const clients: ClientMap = new Map();
 
 export function initWebSocket(server: any) {
   const wss = new WebSocketServer({ server });
+  const heartbeat = setInterval(() => {
+    wss.clients.forEach((ws) => {
+      const socket = ws as any;
 
+      if (socket.isAlive === false) {
+        console.log("[WS] terminating dead socket");
+        return ws.terminate();
+      }
+
+      socket.isAlive = false;
+      ws.ping();
+    });
+  }, 30000);
   wss.on("connection", async (ws: AuthedWebSocket, req) => {
+    const socket = ws as any;
+
+    socket.isAlive = true;
+
+    ws.on("pong", () => {
+      socket.isAlive = true;
+    });
+
     try {
       const url = new URL(req.url || "", "http://localhost");
       const token = url.searchParams.get("token");
@@ -105,5 +124,9 @@ export function initWebSocket(server: any) {
       console.error("[WS] Unexpected connection handler internal error:", err);
       ws.close(1011, "Internal server error");
     }
+  });
+
+  wss.on("close", () => {
+    clearInterval(heartbeat);
   });
 }
