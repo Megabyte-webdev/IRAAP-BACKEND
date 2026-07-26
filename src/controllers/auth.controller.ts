@@ -55,11 +55,13 @@ export const login = async (req: Request, res: Response) => {
       token: refreshToken,
       expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
     });
-    
+
     res.cookie("IRAAPRefreshToken", refreshToken, {
       httpOnly: true,
       secure: true,
-      sameSite: 'None',
+      sameSite: "none",
+      domain: ".iraap.com.ng",
+      path: "/",
       maxAge: 30 * 24 * 60 * 60 * 1000,
     });
 
