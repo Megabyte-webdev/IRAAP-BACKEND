@@ -482,3 +482,25 @@ export async function flushPendingMessages(ws: AuthedWebSocket) {
     });
   }
 }
+
+export async function syncMessageStatuses(ws: AuthedWebSocket) {
+  if (!ws.userId) return;
+
+  const pending = await db.query.messages.findMany({
+    where: and(
+      eq(messages.senderId, ws.userId),
+      or(eq(messages.status, "DELIVERED"), eq(messages.status, "READ")),
+    ),
+  });
+
+  if (!pending.length) return;
+
+  safeSend(ws, {
+    type: "chat:status:sync",
+    payload: pending.map((m) => ({
+      messageId: m.id,
+      status: m.status,
+      readAt: m.readAt,
+    })),
+  });
+}
