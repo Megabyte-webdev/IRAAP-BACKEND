@@ -12,59 +12,54 @@ const worker = new Worker(
     console.log("Processing meeting reminder:", job.data);
 
     try {
-      const { messageId, recipientType } = job.data;
+      const {
+        messageId,
+        email,
+        recipientName,
+        recipientType,
+        supervisorName,
+        meetingTitle,
+        meetingUrl,
+        scheduledAt,
+        reminderMinutes,
+      } = job.data;
 
+      // 1. Verify message still exists & isn't canceled
       const message = await db.query.messages.findFirst({
         where: eq(messages.id, messageId),
-        with: {
-          sender: true,
-          receiver: true,
-          columns: {
-            id: true,
-            content: true,
-            msgType: true,
-            meetingUrl: true,
-            duration: true,
-            scheduledAt: true,
-            status: true,
-          },
-        },
       });
 
-      // Message deleted
       if (!message || message.msgType !== "CALL_INVITE") {
-        console.log(`Meeting message ${messageId} no longer exists`);
+        console.log(
+          `Meeting message ${messageId} no longer exists or canceled`,
+        );
         return;
       }
 
-      // Optional: if you have status
-      if (message.status === "cancelled") {
-        console.log(`Meeting ${messageId} cancelled`);
+      if ((message as any).status === "CANCELLED") {
+        console.log(`Meeting ${messageId} was cancelled`);
         return;
       }
 
+      // 2. Build email payload directly from job.data (preserves dynamic user-specific meetingUrl)
       const payload = {
-        recipientName: message.receiver.fullName,
-        supervisorName: message.sender.fullName,
-        meetingTitle: message.content,
-        meetingUrl: message.meetingUrl,
-        scheduledAt: message.scheduleAt,
+        recipientName,
+        supervisorName,
+        meetingTitle,
+        meetingUrl, // <--- Per-user URL passed from queue job
+        scheduledAt: scheduledAt || message.createdAt,
         recipientRole: recipientType,
+        reminderMinutes,
       };
 
       const emailInfo = getEmailData("MEETING_REMINDER", payload);
 
       if (!emailInfo) return;
 
-      await sendEmail(
-        message.receiver.email,
-        emailInfo.subject,
-        emailInfo.html,
-        "system",
-      );
+      // 3. Send email to the designated recipient's email address
+      await sendEmail(email, emailInfo.subject, emailInfo.html, "system");
     } catch (err) {
       console.error("Meeting reminder failed:", err);
-
       throw err;
     }
   },

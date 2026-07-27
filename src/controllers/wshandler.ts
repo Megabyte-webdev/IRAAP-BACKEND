@@ -9,7 +9,7 @@ import {
 } from "../database/schema.js";
 import { clients } from "../services/ws.js";
 import { db } from "../config/db.js";
-import { buildMsgsDTO } from "../utils/helper.js";
+import { buildMsgsDTO, generateMeetingUrl } from "../utils/helper.js";
 import { sendPushNotification } from "../utils/pusher.js";
 import { execute, safeSend, sendWsError } from "../utils/ws-response.js";
 import { createMeeting } from "../services/meetingsdk.js";
@@ -287,6 +287,23 @@ async function handleChatSend(
   }
   if (msgType === "CALL_INVITE" && msg.meeting?.scheduledAt) {
     try {
+      const meetingId = meetingRecord?.meetingId || String(saved.id);
+      const meetingTitle = msg.meeting.meetingTitle ?? "Meeting";
+
+      const studentMeetingUrl = generateMeetingUrl({
+        meetingId,
+        userName: recipient.fullName,
+        hostName: ws.fullName,
+        meetingName: meetingTitle,
+        rolePath: "student",
+      });
+      const supervisorMeetingUrl = generateMeetingUrl({
+        meetingId,
+        userName: ws.fullName,
+        hostName: ws.fullName,
+        meetingName: meetingTitle,
+        rolePath: "supervisor",
+      });
       // Email to student
       eventBus.emit(Events.MEETING_SCHEDULED, {
         email: recipient.email,
@@ -296,7 +313,7 @@ async function handleChatSend(
         meetingTitle: msg.meeting.meetingTitle ?? "Meeting",
         scheduledAt: msg.meeting.scheduledAt,
         duration: msg.meeting.duration,
-        meetingUrl: meetingUrl,
+        meetingUrl: studentMeetingUrl,
         messageId: saved.id,
       });
 
@@ -309,7 +326,7 @@ async function handleChatSend(
           meetingTitle: msg.meeting.meetingTitle ?? "Meeting",
           scheduledAt: msg.meeting.scheduledAt,
           duration: msg.meeting.duration,
-          meetingUrl: meetingUrl,
+          meetingUrl: supervisorMeetingUrl,
           isSupervisorConfirmation: true,
           messageId: saved.id,
         });

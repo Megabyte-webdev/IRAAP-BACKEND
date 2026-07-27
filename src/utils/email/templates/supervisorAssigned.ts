@@ -5,108 +5,98 @@ export const supervisorAssignedTemplate = (data: {
   supervisorName: string;
 }) => {
   const html = `
-    <div style="text-align: center; margin-bottom: 20px;">
-      <span style="
-        background-color: #eff6ff;
-        color: #1d4ed8;
-        padding: 6px 14px;
-        border-radius: 999px;
-        font-size: 11px;
-        font-weight: 600;
-        letter-spacing: 0.05em;
-        text-transform: uppercase;
-        display: inline-block;
-      ">
-        Supervisor Assigned
-      </span>
-    </div>
-
-    <h2 style="
+    <!-- Category Label -->
+    <p style="
       margin: 0 0 12px 0;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: #3aa6ee;
+    ">
+      Supervisor Assigned
+    </p>
+
+    <!-- Heading -->
+    <h2 style="
+      margin: 0 0 20px 0;
       color: #0f172a;
       font-size: 22px;
       font-weight: 700;
-      text-align: center;
       line-height: 1.3;
     ">
       Research Supervisor Allocated
     </h2>
 
-    <p style="
-      color: #475569;
-      font-size: 14px;
-      text-align: center;
-      margin: 0 auto 24px auto;
-      max-width: 440px;
-      line-height: 1.6;
-    ">
-      Hello <strong>${data?.studentName}</strong>, a faculty supervisor has been assigned to guide your research repository progress on IRAP.
+    <p style="margin: 0 0 16px 0; color: #334155; font-size: 15px; line-height: 1.6;">
+      Hello ${data?.studentName},
     </p>
 
-    <div style="
-      border: 1px solid #e2e8f0;
-      border-radius: 10px;
-      overflow: hidden;
-      margin: 24px 0;
-      background-color: #ffffff;
-    ">
-      <table width="100%" border="0" cellpadding="0" cellspacing="0" style="border-collapse: collapse; width: 100%; table-layout: fixed;">
-        <tr>
-          <td style="
-            padding: 14px 16px;
-            font-size: 11px;
-            color: #64748b;
-            background-color: #f8fafc;
-            font-weight: 700;
-            text-transform: uppercase;
-            letter-spacing: 0.03em;
-            border-bottom: 0px none;
-            text-align: left;
-            width: 30%;
-          ">
-            Supervisor
-          </td>
-          <td style="
-            padding: 14px 16px;
-            color: #0f172a;
-            font-size: 14px;
-            font-weight: 600;
-            line-height: 1.5;
-            border-bottom: 0px none;
-            text-align: left;
-          ">
-            ${data?.supervisorName}
-          </td>
-        </tr>
-      </table>
-    </div>
-
-    <p style="
-      color: #64748b;
-      font-size: 13px;
-      margin: 8px 0 0 0;
-      line-height: 1.5;
-      text-align: center;
-    ">
-      You can now set up review cycles, submit abstracts, and process revision documents with your assigned mentor.
+    <p style="margin: 0 0 24px 0; color: #334155; font-size: 15px; line-height: 1.6;">
+      A faculty supervisor has been assigned to guide your research progress on the Institutional Research Archive Platform (IRAAP).
     </p>
 
-    <div style="text-align: center; margin-top: 28px;">
-      <a href="${process.env.FRONTEND_URL}/student" target="_blank" rel="noopener noreferrer"
-        style="
-          background-color: #2563eb;
-          color: #ffffff;
-          padding: 12px 26px;
-          border-radius: 6px;
+    <!-- Supervisor Details Data Table -->
+    <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin: 0 0 28px 0; border-collapse: collapse; border: 1px solid #e2e8f0;">
+      <tr>
+        <td style="
+          padding: 12px 16px;
+          font-size: 12px;
+          color: #64748b;
+          background-color: #f8fafc;
+          font-weight: 600;
+          width: 30%;
+        ">
+          Supervisor
+        </td>
+        <td style="
+          padding: 12px 16px;
+          color: #0f172a;
           font-size: 14px;
           font-weight: 600;
-          text-decoration: none;
-          display: inline-block;
-          box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+          line-height: 1.5;
         ">
-        Open Workspace
-      </a>
-    </div>
+          ${data?.supervisorName}
+        </td>
+      </tr>
+    </table>
+
+    <!-- Primary Action Button (Table-based CTA) -->
+    <table cellpadding="0" cellspacing="0" border="0" style="margin-bottom: 32px;">
+      <tr>
+        <td align="center" style="background-color: #3aa6ee;">
+          <a href="${process.env.FRONTEND_URL}/student" target="_blank" rel="noopener noreferrer"
+            style="
+              background-color: #3aa6ee;
+              color: #ffffff;
+              padding: 12px 28px;
+              font-size: 14px;
+              font-weight: 600;
+              text-decoration: none;
+              display: inline-block;
+              border: 1px solid #3aa6ee;
+            ">
+            Open Workspace &rarr;
+          </a>
+        </td>
+      </tr>
+    </table>
+
+    <!-- Divider Line -->
+    <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin: 0 0 20px 0;">
+      <tr>
+        <td style="border-top: 1px solid #e2e8f0; font-size: 0; line-height: 0;">&nbsp;</td>
+      </tr>
+    </table>
+
+    <p style="
+      font-size: 13px;
+      color: #64748b;
+      margin: 0;
+      line-height: 1.5;
+    ">
+      You can now set up review cycles, submit abstracts, and process revision documents directly with your assigned mentor.
+    </p>
   `;
 
   return mainLayout(html);

@@ -119,10 +119,20 @@ export function initWebSocket(server: any) {
           }
         }
       });
-    } catch (err) {
-      // Catches generic internal server issues (like database connection drops)
-      console.error("[WS] Unexpected connection handler internal error:", err);
-      ws.close(1011, "Internal server error");
+    } catch (jwtErr: any) {
+      console.warn(`[WS] Auth Rejected: ${jwtErr.message}`);
+
+      const expired = jwtErr.name === "TokenExpiredError";
+
+      ws.send(
+        JSON.stringify({
+          type: "auth:error",
+          code: expired ? "TOKEN_EXPIRED" : "INVALID_TOKEN",
+        }),
+      );
+
+      ws.close(expired ? 4401 : 4403);
+      return;
     }
   });
 

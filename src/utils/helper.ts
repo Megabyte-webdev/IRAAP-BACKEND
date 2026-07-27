@@ -115,3 +115,21 @@ export const verifyProjectOwnership = async (
   });
   return !!project;
 };
+
+export const generateMeetingUrl = (params: {
+  meetingId: string;
+  userName: string;
+  hostName: string;
+  meetingName: string;
+  rolePath: "student" | "supervisor";
+}) => {
+  const query = new URLSearchParams({
+    meetingId: params.meetingId ?? "",
+    userName: params.userName,
+    hostName: params.hostName,
+    meetingName: params.meetingName ?? "",
+  });
+
+  const baseUrl = process.env.FRONTEND_URL || "https://iraap.com.ng";
+  return `${baseUrl}/${params.rolePath}/waiting?${query.toString()}`;
+};

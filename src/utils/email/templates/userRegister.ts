@@ -7,135 +7,128 @@ export const registeredTemplate = (data: {
   role: "STUDENT" | "SUPERVISOR";
 }) => {
   const html = `
-    <div style="text-align: center; margin-bottom: 20px;">
-      <span style="
-        background-color: #f1f5f9;
-        color: #334155;
-        padding: 6px 14px;
-        border-radius: 999px;
-        font-size: 11px;
-        font-weight: 600;
-        letter-spacing: 0.05em;
-        text-transform: uppercase;
-        display: inline-block;
-      ">
-        Account Created
-      </span>
-    </div>
-
-    <h2 style="
+    <!-- Category Label -->
+    <p style="
       margin: 0 0 12px 0;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: #3aa6ee;
+    ">
+      Account Created
+    </p>
+
+    <!-- Heading -->
+    <h2 style="
+      margin: 0 0 20px 0;
       color: #0f172a;
       font-size: 22px;
       font-weight: 700;
-      text-align: center;
       line-height: 1.3;
     ">
-      Welcome to IRAP, ${data?.fullName}
+      Welcome to IRAAP, ${data?.fullName}
     </h2>
 
-    <p style="
-      color: #475569;
-      font-size: 14px;
-      text-align: center;
-      margin: 0 auto 24px auto;
-      max-width: 420px;
-      line-height: 1.6;
-    ">
-      Your account has been successfully created as a 
-      <strong>${data?.role.toLowerCase()}</strong>. You can now log in and begin using the platform.
+    <p style="margin: 0 0 16px 0; color: #334155; font-size: 15px; line-height: 1.6;">
+      Hello ${data?.fullName},
     </p>
 
-    <div style="
-      border: 1px solid #e2e8f0;
-      border-radius: 10px;
-      overflow: hidden;
-      margin: 24px 0;
-      background-color: #ffffff;
-    ">
-      <table width="100%" border="0" cellpadding="0" cellspacing="0" style="border-collapse: collapse; width: 100%; table-layout: fixed;">
-        <tr>
-          <td class="stack-cell-label" style="
-            padding: 14px 16px;
-            font-size: 11px;
-            color: #64748b;
-            background-color: #f8fafc;
-            font-weight: 700;
-            text-transform: uppercase;
-            letter-spacing: 0.03em;
-            border-bottom: 1px solid #e2e8f0;
-            text-align: left;
-          ">
-            Email
-          </td>
-          <td class="stack-cell-value" style="
-            padding: 14px 16px;
-            color: #0f172a;
-            font-size: 14px;
-            line-height: 1.5;
-            border-bottom: 1px solid #e2e8f0;
-            text-align: left;
-            word-break: break-all;
-          ">
-            ${data?.email}
-          </td>
-        </tr>
-
-        <tr>
-          <td class="stack-cell-label" style="
-            padding: 14px 16px;
-            font-size: 11px;
-            color: #64748b;
-            background-color: #f8fafc;
-            font-weight: 700;
-            text-transform: uppercase;
-            letter-spacing: 0.03em;
-            text-align: left;
-          ">
-            Password
-          </td>
-          <td class="stack-cell-value" style="
-            padding: 14px 16px;
-            color: #0f172a;
-            font-size: 14px;
-            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-            letter-spacing: 0.05em;
-            line-height: 1.5;
-            font-weight: 600;
-            text-align: left;
-          ">
-            ${data?.password}
-          </td>
-        </tr>
-      </table>
-    </div>
-
-    <p style="
-      color: #64748b;
-      font-size: 13px;
-      margin: 8px 0 0 0;
-      line-height: 1.5;
-      text-align: center;
-    ">
-      For security reasons, please log in and update your password immediately after your first sign-in.
+    <p style="margin: 0 0 24px 0; color: #334155; font-size: 15px; line-height: 1.6;">
+      Your account has been successfully created as a <strong>${data?.role.toLowerCase()}</strong> on the Institutional Research Archive Platform (IRAAP). You can now log in using the credentials below.
     </p>
 
-    <div style="text-align: center; margin-top: 28px;">
-      <a href="${process.env.FRONTEND_URL}/${data?.role.toLowerCase()}" target="_blank" rel="noopener noreferrer"
-        style="
-          background-color: #2563eb;
-          color: #ffffff;
-          padding: 12px 26px;
-          border-radius: 6px;
-          font-size: 14px;
+    <!-- Account Details Data Table -->
+    <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin: 0 0 28px 0; border-collapse: collapse; border: 1px solid #e2e8f0;">
+      <tr>
+        <td style="
+          padding: 12px 16px;
+          font-size: 12px;
+          color: #64748b;
+          background-color: #f8fafc;
+          width: 28%;
           font-weight: 600;
-          text-decoration: none;
-          display: inline-block;
-          box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+          text-transform: uppercase;
+          letter-spacing: 0.02em;
+          border-bottom: 1px solid #e2e8f0;
         ">
-        Go to Dashboard
-      </a>
-    </div>
+          Email
+        </td>
+        <td style="
+          padding: 12px 16px;
+          font-size: 14px;
+          color: #0f172a;
+          line-height: 1.5;
+          border-bottom: 1px solid #e2e8f0;
+          word-break: break-all;
+        ">
+          ${data?.email}
+        </td>
+      </tr>
+
+      <tr>
+        <td style="
+          padding: 12px 16px;
+          font-size: 12px;
+          color: #64748b;
+          background-color: #f8fafc;
+          width: 28%;
+          font-weight: 600;
+          text-transform: uppercase;
+          letter-spacing: 0.02em;
+        ">
+          Password
+        </td>
+        <td style="
+          padding: 12px 16px;
+          color: #0f172a;
+          font-size: 14px;
+          font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+          letter-spacing: 0.05em;
+          line-height: 1.5;
+          font-weight: 600;
+        ">
+          ${data?.password}
+        </td>
+      </tr>
+    </table>
+
+    <!-- Primary Action Button (Table-based CTA) -->
+    <table cellpadding="0" cellspacing="0" border="0" style="margin-bottom: 32px;">
+      <tr>
+        <td align="center" style="background-color: #3aa6ee;">
+          <a href="${process.env.FRONTEND_URL}/${data?.role.toLowerCase()}" target="_blank" rel="noopener noreferrer"
+            style="
+              background-color: #3aa6ee;
+              color: #ffffff;
+              padding: 12px 28px;
+              font-size: 14px;
+              font-weight: 600;
+              text-decoration: none;
+              display: inline-block;
+              border: 1px solid #3aa6ee;
+            ">
+            Go to Dashboard &rarr;
+          </a>
+        </td>
+      </tr>
+    </table>
+
+    <!-- Divider Line -->
+    <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin: 0 0 20px 0;">
+      <tr>
+        <td style="border-top: 1px solid #e2e8f0; font-size: 0; line-height: 0;">&nbsp;</td>
+      </tr>
+    </table>
+
+    <p style="
+      font-size: 13px;
+      color: #64748b;
+      margin: 0;
+      line-height: 1.5;
+    ">
+      For security reasons, please sign in and update your temporary password immediately upon your initial login.
+    </p>
   `;
 
   return mainLayout(html);
