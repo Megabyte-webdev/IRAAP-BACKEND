@@ -37,7 +37,10 @@ export type ClientMessage =
   | ChatReadBulkMessage
   | ChatTypingMessage
   | {
-      type: "ping";
+      type: "chat:received:bulk";
+    }
+  | {
+      type: "chat:received";
     };
 
 export type MessagePayload = {

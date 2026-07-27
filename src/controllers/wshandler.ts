@@ -25,14 +25,15 @@ export async function handleMessage(ws: AuthedWebSocket, raw: string) {
   }
 
   switch (msg.type) {
-    case "ping":
-      return safeSend(ws, {
-        type: "pong",
-        timestamp: new Date().toISOString(),
-      });
-
     case "chat:send":
       return execute(ws, "chat:send", () => handleChatSend(ws, msg));
+
+    case "chat:received":
+      return execute(ws, "chat:received", () => handleReceived(ws, msg));
+    case "chat:received:bulk":
+      return execute(ws, "chat:received:bulk", () =>
+        handleReceivedBulk(ws, msg),
+      );
 
     case "chat:read":
       return execute(ws, "chat:read", () => handleRead(ws, msg));
@@ -270,6 +271,7 @@ async function handleChatSend(
       type: "chat:message",
       payload,
     });
+
     try {
       await sendPushNotification({
         senderId: payload.senderId,
@@ -282,21 +284,6 @@ async function handleChatSend(
     } catch (error) {
       console.warn(error);
     }
-    await db
-      .update(messages)
-      .set({
-        status: "DELIVERED",
-      })
-      .where(eq(messages.id, saved.id));
-
-    safeSend(ws, {
-      type: "chat:delivered",
-      payload: {
-        messageId: saved.id,
-        conversationId: convo.id,
-        deliveredTo: msg.recipientId,
-      },
-    });
   }
   if (msgType === "CALL_INVITE" && msg.meeting?.scheduledAt) {
     try {
@@ -453,54 +440,74 @@ export async function flushPendingMessages(ws: AuthedWebSocket) {
   const toDeliver = pending.filter((m) => m.senderId !== ws.userId);
   if (toDeliver.length === 0) return;
 
-  // Push all missed messages in one frame
   safeSend(ws, {
     type: "chat:messages:bulk",
     payload: toDeliver.map((m) => buildMsgsDTO(m, m.replyTo)),
   });
+}
 
-  const ids = toDeliver.map((m) => m.id);
+async function handleReceived(ws: AuthedWebSocket, msg: any) {
+  if (!ws.userId) return;
+
+  const message = await db.query.messages.findFirst({
+    where: eq(messages.id, msg.messageId),
+  });
+
+  if (!message) return;
 
   await db
     .update(messages)
-    .set({ status: "DELIVERED" })
-    .where(inArray(messages.id, ids));
+    .set({
+      status: "DELIVERED",
+    })
+    .where(eq(messages.id, msg.messageId));
 
-  // Notify each original sender their messages were delivered
-  const bySender = toDeliver.reduce<Record<number, number[]>>((acc, m) => {
-    (acc[m.senderId] ??= []).push(m.id);
-    return acc;
-  }, {});
+  const senderSocket = clients.get(message.senderId);
 
-  for (const [senderId, messageIds] of Object.entries(bySender)) {
-    const socket = clients.get(Number(senderId));
-    if (!socket) continue;
-
-    safeSend(socket, {
-      type: "chat:delivered:bulk",
-      messageIds,
-    });
-  }
+  safeSend(senderSocket, {
+    type: "chat:delivered",
+    payload: {
+      messageId: message.id,
+      deliveredTo: ws.userId,
+    },
+  });
 }
 
-export async function syncMessageStatuses(ws: AuthedWebSocket) {
+async function handleReceivedBulk(ws: AuthedWebSocket, msg: any) {
   if (!ws.userId) return;
 
-  const pending = await db.query.messages.findMany({
-    where: and(
-      eq(messages.senderId, ws.userId),
-      or(eq(messages.status, "DELIVERED"), eq(messages.status, "READ")),
-    ),
+  const ids = msg.messageIds;
+
+  if (!Array.isArray(ids) || ids.length === 0) return;
+
+  const messagesFound = await db.query.messages.findMany({
+    where: inArray(messages.id, ids),
   });
 
-  if (!pending.length) return;
+  await db
+    .update(messages)
+    .set({
+      status: "DELIVERED",
+    })
+    .where(inArray(messages.id, ids));
 
-  safeSend(ws, {
-    type: "chat:status:sync",
-    payload: pending.map((m) => ({
-      messageId: m.id,
-      status: m.status,
-      readAt: m.readAt,
-    })),
-  });
+  const grouped = messagesFound.reduce(
+    (acc, m) => {
+      (acc[m.senderId] ??= []).push(m.id);
+      return acc;
+    },
+    {} as Record<number, number[]>,
+  );
+
+  for (const [senderId, messageIds] of Object.entries(grouped)) {
+    const senderSocket = clients.get(Number(senderId));
+
+    safeSend(senderSocket, {
+      type: "chat:delivered:bulk",
+      payload: {
+        messageIds,
+        deliveredTo: ws.userId,
+      },
+    });
+  }
 }
