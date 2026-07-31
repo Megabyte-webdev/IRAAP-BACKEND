@@ -6,7 +6,7 @@ export async function uploadToCloudinary(fileBuffer: Buffer) {
     const stream = cloudinary.uploader.upload_stream(
       {
         folder: "research_projects",
-        resource_type: "image",
+        resource_type: "raw",
         format: "pdf",
       },
       (error, result: any) => {

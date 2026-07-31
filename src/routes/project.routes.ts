@@ -10,7 +10,10 @@ import {
 } from "../controllers/project.controller.js";
 import { authenticate, authorize } from "../middleware/auth.js";
 import { upload } from "../middleware/upload.js";
-import { releaseProjectForPublication } from "../controllers/review.controller.js";
+import {
+  publishProject,
+  releaseProjectForPublication,
+} from "../controllers/review.controller.js";
 
 const router: Router = Router();
 
@@ -61,6 +64,13 @@ router.post(
   authenticate,
   authorize(["SUPERVISOR"]),
   releaseProjectForPublication,
+);
+
+router.post(
+  "/:projectId/publish",
+  authenticate,
+  authorize(["STUDENT"]),
+  publishProject,
 );
 
 router.get("/", getAllProjects);

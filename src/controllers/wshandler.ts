@@ -321,13 +321,13 @@ async function handleChatSend(
         eventBus.emit(Events.MEETING_SCHEDULED, {
           email: ws.email,
           recipientName: ws.fullName,
-          recipientType: ws.userRole,
+          recipientType: "supervisor",
+          studentName: recipient.fullName,
           supervisorName: ws.fullName,
-          meetingTitle: msg.meeting.meetingTitle ?? "Meeting",
+          meetingTitle,
           scheduledAt: msg.meeting.scheduledAt,
           duration: msg.meeting.duration,
           meetingUrl: supervisorMeetingUrl,
-          isSupervisorConfirmation: true,
           messageId: saved.id,
         });
       }

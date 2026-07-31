@@ -133,3 +133,17 @@ export const generateMeetingUrl = (params: {
   const baseUrl = process.env.FRONTEND_URL || "https://iraap.com.ng";
   return `${baseUrl}/${params.rolePath}/waiting?${query.toString()}`;
 };
+
+export const extractItems = (
+  data: string | string[] | null | undefined,
+  targetSet: Set<string>,
+) => {
+  if (!data) return;
+
+  const items = Array.isArray(data) ? data : data.split(",");
+
+  items
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0)
+    .forEach((item) => targetSet.add(item));
+};

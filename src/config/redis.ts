@@ -20,6 +20,5 @@ export const redisOptions = {
 export const redisConnection = new Redis.default(redisUrl, redisOptions);
 
 // Helpful for logging
-redisConnection.on("error", (err) => console.error("Redis Error:", err));
 redisConnection.on("connect", () => console.log("Connected to Redis"));
 redisConnection.on("ready", () => console.log("Redis connection is ready"));

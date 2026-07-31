@@ -9,14 +9,13 @@ import { getEmailData } from "../utils/email/engine.js";
 const worker = new Worker(
   "meeting-reminder",
   async (job) => {
-    console.log("Processing meeting reminder:", job.data);
-
     try {
       const {
         messageId,
         email,
         recipientName,
         recipientType,
+        studentName,
         supervisorName,
         meetingTitle,
         meetingUrl,
@@ -24,7 +23,6 @@ const worker = new Worker(
         reminderMinutes,
       } = job.data;
 
-      // 1. Verify message still exists & isn't canceled
       const message = await db.query.messages.findFirst({
         where: eq(messages.id, messageId),
       });
@@ -41,22 +39,20 @@ const worker = new Worker(
         return;
       }
 
-      // 2. Build email payload directly from job.data (preserves dynamic user-specific meetingUrl)
       const payload = {
         recipientName,
+        studentName,
         supervisorName,
         meetingTitle,
-        meetingUrl, // <--- Per-user URL passed from queue job
-        scheduledAt: scheduledAt || message.createdAt,
+        meetingUrl,
+        scheduledAt: scheduledAt,
         recipientRole: recipientType,
         reminderMinutes,
       };
 
       const emailInfo = getEmailData("MEETING_REMINDER", payload);
-
       if (!emailInfo) return;
 
-      // 3. Send email to the designated recipient's email address
       await sendEmail(email, emailInfo.subject, emailInfo.html, "system");
     } catch (err) {
       console.error("Meeting reminder failed:", err);

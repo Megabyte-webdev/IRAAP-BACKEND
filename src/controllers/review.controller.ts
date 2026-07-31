@@ -539,12 +539,12 @@ export const releaseProjectForPublication = async (
         .json({ message: "This project is already permanently published." });
     }
 
-    // Update the state mapping directly to VERIFIED
     await db
       .update(projects)
       .set({
         status: "VERIFIED",
         updatedAt: new Date(),
+        isSignaledForPublication: true,
       })
       .where(eq(projects.id, projectId));
 
@@ -569,7 +569,76 @@ export const releaseProjectForPublication = async (
   }
 };
 
-// UPDATE PROJECT STATUS  (supervisor — requires all tasks VERIFIED)
+export const publishProject = async (req: Request, res: Response) => {
+  const studentId = Number((req as any).user.id);
+  const projectId = Number(req.params.projectId);
+
+  if (isNaN(projectId)) {
+    return res.status(400).json({ message: "Invalid project ID" });
+  }
+
+  try {
+    const project = await db.query.projects.findFirst({
+      where: and(eq(projects.id, projectId), eq(projects.studentId, studentId)),
+      with: {
+        supervisor: true,
+      },
+    });
+
+    if (!project) {
+      return res
+        .status(404)
+        .json({ message: "Project not found or access denied." });
+    }
+
+    // Guard 1: Already Published
+    if (project.status === "APPROVED" || project.status === "PUBLISHED") {
+      return res
+        .status(400)
+        .json({ message: "This project has already been published." });
+    }
+
+    // Guard 2: Enforce Supervisor Sign-off
+    if (project.status !== "VERIFIED" && !project.isSignaledForPublication) {
+      return res.status(403).json({
+        message:
+          "Action Blocked: Your supervisor has not cleared this project for publication yet.",
+      });
+    }
+
+    // Publish the project
+    await db
+      .update(projects)
+      .set({
+        status: "APPROVED",
+        updatedAt: new Date(),
+      })
+      .where(eq(projects.id, projectId));
+
+    // Emit event with payload matching projectPublishedTemplate
+    const studentUser = (req as any).user;
+    if (studentUser?.email) {
+      eventBus.emit(Events.PROJECT_PUBLISHED, {
+        studentEmail: studentUser.email,
+        studentName: studentUser.fullName,
+        projectName: project.title,
+        supervisorName: project.supervisor?.fullName || "Your Supervisor",
+        publishedAt: new Date().toISOString(),
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Congratulations! Your project has been published successfully.",
+    });
+  } catch (error: any) {
+    console.error("publishProject error:", error);
+    return res
+      .status(500)
+      .json({ message: "Failed to publish project", error: error.message });
+  }
+};
+
 export const updateProjectStatus = async (req: Request, res: Response) => {
   const supervisorId = Number((req as any).user.id);
   const projectId = Number(req.params.id);

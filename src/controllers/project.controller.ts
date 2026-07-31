@@ -89,7 +89,6 @@ export const submitProject = async (req: Request, res: Response) => {
           categoryId: parsed.categoryId,
           status: "PENDING",
           fileUrl: uploadResult.url,
-          publicId: uploadResult.publicId,
           totalVersions: 1,
           updatedAt: new Date(),
         })
@@ -100,7 +99,6 @@ export const submitProject = async (req: Request, res: Response) => {
         .values({
           projectId: project.id,
           fileUrl: uploadResult.url,
-          publicId: uploadResult.publicId,
           versionNumber: 1,
           uploadedBy: studentId,
           changeNote: "Initial submission",
@@ -219,7 +217,6 @@ export const updateProject = async (req: Request, res: Response) => {
           .values({
             projectId,
             fileUrl: uploadResult.url,
-            publicId: uploadResult.publicId,
             versionNumber: nextVersion,
             uploadedBy: studentId,
             changeNote: req.body.changeNote || "Student update",
@@ -244,7 +241,6 @@ export const updateProject = async (req: Request, res: Response) => {
           totalVersions: newTotalVersions,
           ...(uploadResult && {
             fileUrl: uploadResult.url,
-            publicId: uploadResult.publicId,
           }),
           updatedAt: new Date(),
         })
@@ -295,6 +291,7 @@ export const getStudentSubmissions = async (req: Request, res: Response) => {
         title: projects.title,
         abstract: projects.abstract,
         submissionYear: projects.submissionYear,
+        isSignaledForPublication: projects.isSignaledForPublication,
         status: projects.status,
         categoryId: projects.categoryId,
         category: categories.name,
@@ -517,23 +514,32 @@ export const getAllProjects = async (req: Request, res: Response) => {
 
       categoryId ? eq(projects.categoryId, Number(categoryId)) : undefined,
 
-      title ? ilike(projects.title, `%${title}%`) : undefined,
+      title ? ilike(projects.title, `%${String(title).trim()}%`) : undefined,
 
       year ? eq(projects.submissionYear, Number(year)) : undefined,
 
       researchArea
-        ? ilike(metadata.researchArea, `%${researchArea}%`)
+        ? ilike(metadata.researchArea, `%${String(researchArea).trim()}%`)
         : undefined,
 
-      methodology ? ilike(metadata.methodology, `%${methodology}%`) : undefined,
+      methodology
+        ? ilike(metadata.methodology, `%${String(methodology).trim()}%`)
+        : undefined,
 
       researchType ? eq(projects.researchType, researchType as any) : undefined,
 
-      // Handle both a single keyword string or an array of active filter keywords
+      // Keyword filter
       keyword
         ? Array.isArray(keyword)
-          ? sql`${metadata.keywords} && ARRAY[${sql.join(keyword.map((k) => sql`${k}::text`))}]::text[]`
-          : sql`${metadata.keywords} @> ARRAY[${keyword}]::text[]`
+          ? sql`${metadata.keywords} && ARRAY[
+              ${sql.join(
+                keyword.map((k) => sql`${String(k).trim()}::text`),
+                sql`, `,
+              )}
+            ]::text[]`
+          : sql`${metadata.keywords} @> ARRAY[
+              ${String(keyword).trim()}::text
+            ]::text[]`
         : undefined,
     ];
 
@@ -542,8 +548,11 @@ export const getAllProjects = async (req: Request, res: Response) => {
     const result = await withPagination({
       page,
       limit,
+
       countQuery: db
-        .select({ count: sql<number>`cast(count(*) as integer)` })
+        .select({
+          count: sql<number>`cast(count(*) as integer)`,
+        })
         .from(projects)
         .leftJoin(metadata, eq(projects.id, metadata.projectId))
         .where(whereClause),

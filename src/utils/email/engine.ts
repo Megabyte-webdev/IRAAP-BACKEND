@@ -10,6 +10,7 @@ import { supervisorAllocationTemplate } from "./templates/supervisorAllocation.j
 import { meetingScheduledTemplate } from "./templates/meetingScheduled.js";
 import { meetingReminderTemplate } from "./templates/meetingReminder.js";
 import { projectSignaledTemplate } from "./templates/projectSignal.js";
+import { projectPublishedTemplate } from "./templates/projectPublished.js";
 
 export const getEmailData = (type: string, payload: any) => {
   const frontendUrl = "https://iraap.com.ng";
@@ -97,6 +98,15 @@ export const getEmailData = (type: string, payload: any) => {
       return {
         subject: `[IRAAP] Project Cleared and Released for Publication`,
         html: projectSignaledTemplate({
+          ...payload,
+          dashboardUrl: frontendUrl,
+        }),
+      };
+
+    case "PROJECT_PUBLISHED":
+      return {
+        subject: `[IRAAP] Officially Published: ${payload.projectName}`,
+        html: projectPublishedTemplate({
           ...payload,
           dashboardUrl: frontendUrl,
         }),

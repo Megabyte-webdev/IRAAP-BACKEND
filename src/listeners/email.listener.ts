@@ -168,35 +168,25 @@ eventBus.on(Events.MEETING_SCHEDULED, async (data: any) => {
   await sendDirectEmail("MEETING_SCHEDULED", data.email, data, sender);
 
   const scheduledDate = new Date(data.scheduledAt);
-
-  console.log("MEETING TIME:", scheduledDate);
-  console.log("CURRENT TIME:", new Date());
-
   const reminderOffsets = getReminderTimes(scheduledDate);
-  console.log("REMINDER OFFSETS:", reminderOffsets);
 
   for (const minutes of reminderOffsets) {
     const reminderTime = scheduledDate.getTime() - minutes * 60 * 1000;
-
     const delay = reminderTime - Date.now();
-    console.log({
-      minutes,
-      reminderTime: new Date(reminderTime),
-      delay,
-    });
 
-    if (delay <= 0) {
-      continue;
-    }
+    if (delay <= 0) continue;
 
-    // Student reminder
+    const role = (data.recipientType || "student").toLowerCase();
+
+    // Queues specifically for the recipient in this event payload
     await meetingReminderQueue.add(
       "reminder",
       {
         messageId: data.messageId,
         email: data.email,
-        recipientType: "STUDENT",
+        recipientType: role,
         recipientName: data.recipientName,
+        studentName: data.studentName,
         supervisorName: data.supervisorName,
         meetingTitle: data.meetingTitle,
         meetingUrl: data.meetingUrl,
@@ -205,29 +195,7 @@ eventBus.on(Events.MEETING_SCHEDULED, async (data: any) => {
       },
       {
         delay,
-        jobId: `meeting-${data.messageId}-student-${minutes}`,
-        removeOnComplete: true,
-        removeOnFail: 100,
-      },
-    );
-
-    // Supervisor reminder
-    await meetingReminderQueue.add(
-      "reminder",
-      {
-        messageId: data.messageId,
-        email: data.supervisorEmail || data.email,
-        recipientName: data.supervisorName,
-        recipientType: "SUPERVISOR",
-        supervisorName: data.supervisorName,
-        meetingTitle: data.meetingTitle,
-        meetingUrl: data.meetingUrl,
-        scheduledAt: data.scheduledAt,
-        reminderMinutes: minutes,
-      },
-      {
-        delay,
-        jobId: `meeting-${data.messageId}-supervisor-${minutes}`,
+        jobId: `meeting-${data.messageId}-${role}-${minutes}`,
         removeOnComplete: true,
         removeOnFail: 100,
       },

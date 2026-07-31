@@ -1,34 +1,26 @@
 import { mainLayout } from "../layouts/mainLayout.js";
 
-export const meetingReminderTemplate = (data: {
-  recipientName: string;
-  recipientRole: "student" | "supervisor";
+export const projectPublishedTemplate = (data: {
   studentName: string;
-  supervisorName: string;
-  meetingTitle: string;
-  meetingUrl: string;
-  scheduledAt: string;
-  reminderMinutes?: number;
+  projectName: string;
+  supervisorName?: string;
+  publishedAt?: string;
+  dashboardUrl?: string;
 }) => {
-  const meetingTime = new Date(data.scheduledAt).toLocaleTimeString("en-US", {
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: true,
-  });
-
-  const otherParticipant =
-    data.recipientRole === "student" ? data.supervisorName : data.studentName;
-
-  // Format dynamic time window text
-  let timeWindowText = "Starting Shortly";
-  if (data.reminderMinutes) {
-    if (data.reminderMinutes >= 60) {
-      const hours = Math.floor(data.reminderMinutes / 60);
-      timeWindowText = `Starting in ${hours} Hour${hours > 1 ? "s" : ""}`;
-    } else {
-      timeWindowText = `Starting in ${data.reminderMinutes} Minutes`;
-    }
-  }
+  const supervisor = data.supervisorName || "Your Supervisor";
+  const redirectUrl =
+    data.dashboardUrl || `${process.env.FRONTEND_URL}/student`;
+  const formattedDate = data.publishedAt
+    ? new Date(data.publishedAt).toLocaleDateString("en-US", {
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+      })
+    : new Date().toLocaleDateString("en-US", {
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+      });
 
   const html = `
     <!-- Category Label -->
@@ -38,12 +30,12 @@ export const meetingReminderTemplate = (data: {
       font-weight: 700;
       letter-spacing: 0.08em;
       text-transform: uppercase;
-      color: #3aa6ee;
+      color: #16a34a;
     ">
-      Upcoming Schedule
+      Official Publication
     </p>
 
-    <!-- Dynamic Heading -->
+    <!-- Heading -->
     <h2 style="
       margin: 0 0 20px 0;
       color: #0f172a;
@@ -51,53 +43,64 @@ export const meetingReminderTemplate = (data: {
       font-weight: 700;
       line-height: 1.3;
     ">
-      Meeting Reminder: ${timeWindowText}
+      Project Live in Institutional Archive! 🎉
     </h2>
 
     <p style="margin: 0 0 16px 0; color: #334155; font-size: 15px; line-height: 1.6;">
-      Hello ${data.recipientName},
+      Hello ${data.studentName},
     </p>
 
-    <p style="margin: 0 0 24px 0; color: #334155; font-size: 15px; line-height: 1.6;">
-      This is a quick reminder that your scheduled session with <strong>${otherParticipant}</strong> is starting at <strong>${meetingTime}</strong>.
+    <p style="margin: 0 0 16px 0; color: #334155; font-size: 15px; line-height: 1.6;">
+      Congratulations! Your research project <strong>"${data.projectName}"</strong> has been officially published and archived in the Institutional Research Repository and Academic Archive Platform (IRAAP).
     </p>
 
     <!-- Callout Box -->
     <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin: 0 0 28px 0; border-collapse: collapse;">
       <tr>
         <td style="
-          background-color: #f8fafc;
-          border-left: 4px solid #3aa6ee;
+          background-color: #f0fdf4;
+          border-left: 4px solid #22c55e;
           padding: 16px 20px;
         ">
           <p style="
             margin: 0 0 4px 0;
             font-size: 11px;
             font-weight: 700;
-            color: #64748b;
+            color: #15803d;
             text-transform: uppercase;
             letter-spacing: 0.05em;
           ">
-            Meeting Agenda / Topic
+            Supervising Sign-off
+          </p>
+          <p style="
+            margin: 0 0 8px 0;
+            font-size: 14px;
+            font-weight: 600;
+            color: #166534;
+            line-height: 1.5;
+          ">
+            Verified by ${supervisor}
           </p>
           <p style="
             margin: 0;
-            font-size: 15px;
-            font-weight: 600;
-            color: #0f172a;
-            line-height: 1.5;
+            font-size: 12px;
+            color: #15803d;
           ">
-            ${data.meetingTitle}
+            Published Date: <strong>${formattedDate}</strong>
           </p>
         </td>
       </tr>
     </table>
 
+    <p style="margin: 0 0 28px 0; color: #334155; font-size: 15px; line-height: 1.6;">
+      Your thesis document is now permanently indexed and accessible for academic references and institutional evaluation.
+    </p>
+
     <!-- Primary Action Button -->
     <table cellpadding="0" cellspacing="0" border="0" style="margin-bottom: 32px;">
       <tr>
         <td align="center" style="background-color: #3aa6ee;">
-          <a href="${data.meetingUrl}" target="_blank" rel="noopener noreferrer"
+          <a href="${redirectUrl}" target="_blank" rel="noopener noreferrer"
             style="
               background-color: #3aa6ee;
               color: #ffffff;
@@ -108,7 +111,7 @@ export const meetingReminderTemplate = (data: {
               display: inline-block;
               border: 1px solid #3aa6ee;
             ">
-            Join Meeting Room &rarr;
+            View Published Work &rarr;
           </a>
         </td>
       </tr>
@@ -127,7 +130,7 @@ export const meetingReminderTemplate = (data: {
       margin: 0;
       line-height: 1.5;
     ">
-      Please ensure your microphone and audio device are configured prior to joining.
+      Thank you for your academic contribution to the IRAAP repository catalog.
     </p>
   `;
 
