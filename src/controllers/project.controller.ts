@@ -100,6 +100,7 @@ export const submitProject = async (req: Request, res: Response) => {
         .values({
           projectId: project.id,
           fileUrl: uploadResult.url,
+          publicId: uploadResult.publicId,
           versionNumber: 1,
           uploadedBy: studentId,
           changeNote: "Initial submission",
