@@ -14,7 +14,7 @@ export async function uploadToCloudinary(fileBuffer: Buffer) {
       {
         folder: "research_projects",
         public_id: publicId,
-        resource_type: "raw",
+        resource_type: "image",
         format: "pdf",
       },
       (error, result) => {
@@ -27,14 +27,26 @@ export async function uploadToCloudinary(fileBuffer: Buffer) {
           return reject(new Error("Cloudinary returned no result"));
         }
 
-        console.log("[CLOUDINARY] Upload result:", {
+        console.log("[CLOUDINARY] Upload:", {
           secure_url: result.secure_url,
           public_id: result.public_id,
           resource_type: result.resource_type,
           format: result.format,
-          original_filename: result.original_filename,
-          version: result.version,
-          bytes: result.bytes,
+          type: result.type,
+        });
+
+        resolve({
+          url: result.secure_url,
+          publicId: result.public_id,
+          resourceType: result.resource_type,
+          format: result.format,
+        });
+      },
+    );
+
+    stream.end(fileBuffer);
+  });
+}          bytes: result.bytes,
         });
 
         resolve({
