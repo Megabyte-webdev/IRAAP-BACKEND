@@ -3,33 +3,53 @@ import { mainLayout } from "../layouts/mainLayout.js";
 export const meetingScheduledTemplate = (data: {
   recipientName: string;
   supervisorName: string;
+  studentName?: string;
   meetingTitle: string;
   meetingUrl: string;
   scheduledAt: string;
   duration?: number;
   dashboardUrl: string;
-  isSupervisorConfirmation?: boolean;
+  recipientType: string;
 }) => {
-  const isSupervisor = data.isSupervisorConfirmation;
+  const isSupervisor = Boolean(data.recipientType === "supervisor");
   const scheduledDate = new Date(data.scheduledAt);
+
   const formattedDate = scheduledDate.toLocaleDateString("en-US", {
     weekday: "long",
     year: "numeric",
     month: "long",
     day: "numeric",
+    timeZone: "Africa/Lagos",
   });
+
   const formattedTime = scheduledDate.toLocaleTimeString("en-US", {
     hour: "2-digit",
     minute: "2-digit",
     hour12: true,
+    timeZone: "Africa/Lagos",
   });
 
-  // Format duration nicely
+  // Format duration
   const durationText = data.duration
     ? data.duration >= 60
       ? `${Math.round(data.duration / 60)} hour${data.duration / 60 > 1 ? "s" : ""}`
       : `${data.duration} minutes`
     : null;
+
+  // Role-based copy overrides
+  const headingText = isSupervisor
+    ? "Meeting Confirmation"
+    : "New Virtual Session Notice";
+
+  const introText = isSupervisor
+    ? `You have successfully scheduled a virtual consultation titled <strong>${data.meetingTitle}</strong>${
+        data.studentName ? ` with <strong>${data.studentName}</strong>` : ""
+      }.`
+    : `Your supervisor, <strong>${data.supervisorName}</strong>, has scheduled a virtual consultation to discuss your project progress.`;
+
+  const footerText = isSupervisor
+    ? "You can launch the meeting session directly from your supervisor dashboard at the scheduled time."
+    : "You can access the virtual room at the assigned timestamp using your unique direct connection path.";
 
   const html = `
     <!-- Category Label -->
@@ -41,7 +61,7 @@ export const meetingScheduledTemplate = (data: {
       text-transform: uppercase;
       color: #3aa6ee;
     ">
-      Meeting Scheduled
+      ${isSupervisor ? "Meeting Scheduled" : "Upcoming Meeting"}
     </p>
 
     <!-- Heading -->
@@ -52,7 +72,7 @@ export const meetingScheduledTemplate = (data: {
       font-weight: 700;
       line-height: 1.3;
     ">
-      New Virtual Session Notice
+      ${headingText}
     </h2>
 
     <p style="margin: 0 0 16px 0; color: #334155; font-size: 15px; line-height: 1.6;">
@@ -60,14 +80,10 @@ export const meetingScheduledTemplate = (data: {
     </p>
 
     <p style="margin: 0 0 24px 0; color: #334155; font-size: 15px; line-height: 1.6;">
-      ${
-        isSupervisor
-          ? `You have successfully scheduled a virtual consultation: <strong>${data.meetingTitle}</strong>.`
-          : `Your supervisor, <strong>${data.supervisorName}</strong>, has scheduled a virtual consultation to discuss your project progress.`
-      }
+      ${introText}
     </p>
 
-    <!-- Highlighted Schedule Banner (Table-based) -->
+    <!-- Highlighted Schedule Banner -->
     <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin: 0 0 24px 0; border-collapse: collapse;">
       <tr>
         <td style="
@@ -104,7 +120,7 @@ export const meetingScheduledTemplate = (data: {
       </tr>
     </table>
 
-    <!-- Session Overview Data Table -->
+    <!-- Session Overview Table -->
     <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin: 0 0 28px 0; border-collapse: collapse; border: 1px solid #e2e8f0;">
       <tr>
         <td style="padding: 12px 16px; font-size: 12px; color: #64748b; background-color: #f8fafc; width: 30%; border-bottom: 1px solid #e2e8f0; font-weight: 600;">
@@ -116,15 +132,15 @@ export const meetingScheduledTemplate = (data: {
       </tr>
       <tr>
         <td style="padding: 12px 16px; font-size: 12px; color: #64748b; background-color: #f8fafc; width: 30%; font-weight: 600;">
-          Organizer
+          ${isSupervisor ? "Participant" : "Organizer"}
         </td>
         <td style="padding: 12px 16px; font-size: 14px; color: #0f172a;">
-          ${data.supervisorName}
+          ${isSupervisor ? data.studentName || "Assigned Student" : data.supervisorName}
         </td>
       </tr>
     </table>
 
-    <!-- Primary Action Button (Table-based CTA) -->
+    <!-- Call To Action -->
     <table cellpadding="0" cellspacing="0" border="0" style="margin-bottom: 32px;">
       <tr>
         <td align="center" style="background-color: #3aa6ee;">
@@ -139,7 +155,7 @@ export const meetingScheduledTemplate = (data: {
               display: inline-block;
               border: 1px solid #3aa6ee;
             ">
-            Enter Meeting Room &rarr;
+            ${isSupervisor ? "Start Session &rarr;" : "Enter Meeting Room &rarr;"}
           </a>
         </td>
       </tr>
@@ -158,7 +174,7 @@ export const meetingScheduledTemplate = (data: {
       margin: 0;
       line-height: 1.5;
     ">
-      You can access the virtual boardroom at the assigned timestamp using your unique direct connection path.
+      ${footerText}
     </p>
   `;
 
