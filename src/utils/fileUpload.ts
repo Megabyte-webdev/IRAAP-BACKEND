@@ -1,3 +1,4 @@
+import crypto from "crypto";
 import cloudinary from "../config/cloudinary.js";
 
 export async function uploadToCloudinary(fileBuffer: Buffer) {
@@ -7,10 +8,12 @@ export async function uploadToCloudinary(fileBuffer: Buffer) {
     resourceType: string;
     format?: string;
   }>((resolve, reject) => {
+    const publicId = `research_projects/${crypto.randomUUID()}.pdf`;
+
     const stream = cloudinary.uploader.upload_stream(
       {
-        folder: "research_projects",
         resource_type: "raw",
+        public_id: publicId,
       },
       (error, result) => {
         if (error) {
