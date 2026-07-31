@@ -89,6 +89,7 @@ export const submitProject = async (req: Request, res: Response) => {
           categoryId: parsed.categoryId,
           status: "PENDING",
           fileUrl: uploadResult.url,
+          publicId: uploadResult.publicId,
           totalVersions: 1,
           updatedAt: new Date(),
         })
@@ -124,8 +125,32 @@ export const submitProject = async (req: Request, res: Response) => {
 
     return res.status(201).json({
       message: "Project submitted successfully",
-      project: result.project,
-      version: result.version,
+      project: {
+        id: result.project.id,
+        title: result.project.title,
+        abstract: result.project.abstract,
+        submissionYear: result.project.submissionYear,
+        supervisorId: result.project.supervisorId,
+        studentId: result.project.studentId,
+        categoryId: result.project.categoryId,
+        status: result.project.status,
+        fileUrl: result.project.fileUrl,
+        totalVersions: result.project.totalVersions,
+        currentVersionId: result.project.currentVersionId,
+        createdAt: result.project.createdAt,
+        updatedAt: result.project.updatedAt,
+      },
+      version: {
+        id: result.version.id,
+        projectId: result.version.projectId,
+        fileUrl: result.version.fileUrl,
+        versionNumber: result.version.versionNumber,
+        uploadedBy: result.version.uploadedBy,
+        changeNote: result.version.changeNote,
+        trigger: result.version.trigger,
+        fileSizeBytes: result.version.fileSizeBytes,
+        createdAt: result.version.createdAt,
+      },
     });
   } catch (error: any) {
     console.log("Submission error:", error);
@@ -217,6 +242,7 @@ export const updateProject = async (req: Request, res: Response) => {
           .values({
             projectId,
             fileUrl: uploadResult.url,
+            publicId: uploadResult.publicId,
             versionNumber: nextVersion,
             uploadedBy: studentId,
             changeNote: req.body.changeNote || "Student update",
@@ -241,6 +267,7 @@ export const updateProject = async (req: Request, res: Response) => {
           totalVersions: newTotalVersions,
           ...(uploadResult && {
             fileUrl: uploadResult.url,
+            publicId: uploadResult.publicId,
           }),
           updatedAt: new Date(),
         })
@@ -261,7 +288,21 @@ export const updateProject = async (req: Request, res: Response) => {
 
     return res.status(200).json({
       message: "Project updated successfully",
-      project: updated,
+      project: {
+        id: updated.id,
+        title: updated.title,
+        abstract: updated.abstract,
+        submissionYear: updated.submissionYear,
+        supervisorId: updated.supervisorId,
+        studentId: updated.studentId,
+        categoryId: updated.categoryId,
+        status: updated.status,
+        fileUrl: updated.fileUrl,
+        totalVersions: updated.totalVersions,
+        currentVersionId: updated.currentVersionId,
+        createdAt: updated.createdAt,
+        updatedAt: updated.updatedAt,
+      },
     });
   } catch (error: any) {
     console.log("Update error:", error);
