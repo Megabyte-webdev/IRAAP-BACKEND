@@ -6,14 +6,14 @@ if (!redisUrl) throw new Error("REDIS_URL is not defined");
 // Define the options once
 export const redisOptions = {
   maxRetriesPerRequest: null,
-  tls: redisUrl.startsWith("rediss://")
-    ? { rejectUnauthorized: false }
-    : undefined,
   lazyConnect: true,
   enableReadyCheck: false,
-  connectTimeout: 15000,
+  connectTimeout: 15_000,
+  retryStrategy(times) {
+    return Math.min(times * 500, 5_000);
+  },
   // Upstash is sensitive to idle connections, keepalive helps
-  keepAlive: 30000,
+  keepAlive: 30_000,
 };
 
 // Create the connection using the standard constructor (remove .default)
