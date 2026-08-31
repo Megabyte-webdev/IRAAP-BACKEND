@@ -1,7 +1,7 @@
 import type { Request, Response } from "express";
 import { db } from "../config/db.js";
 import { categories, metadata, projects, users } from "../database/schema.js";
-import { and, desc, eq, ilike, sql, inArray, asc } from "drizzle-orm";
+import { aliasedTable, and, desc, eq, ilike, sql, inArray, asc, or } from "drizzle-orm";
 
 type SortOption = "Most Recent" | "Oldest First" | "Alphabetical";
 
@@ -32,188 +32,111 @@ interface SearchResponse {
   };
 }
 
-export const searchProjects = async (
-  req: Request,
-  res: Response,
-): Promise<void> => {
+export const searchProjects = async (req: Request, res: Response): Promise<void> => {
   try {
-    const {
-      title,
-      keyword,
-      supervisor,
-      year,
-      status = "APPROVED",
-      limit = 20,
-      offset = 0,
-      sortBy = "Most Recent",
-    } = req.query;
-
-    // Helper to safely normalize query params into arrays of clean strings/numbers
-    const parseArrayParam = (param: any): string[] => {
-      if (!param) return [];
-      if (Array.isArray(param)) return param.map(String).filter(Boolean);
-      return String(param)
-        .split(",")
-        .map((s) => s.trim())
-        .filter(Boolean);
+    const parseArrayParam = (param: unknown): string[] => {
+      if (Array.isArray(param)) return param.map(String).map((v) => v.trim()).filter(Boolean);
+      if (typeof param === "string") return param.split(",").map((v) => v.trim()).filter(Boolean);
+      return [];
     };
 
-    const keywords = parseArrayParam(keyword);
-    const supervisors = parseArrayParam(supervisor);
-    const years = parseArrayParam(year)
-      .map(Number)
-      .filter((n) => !isNaN(n));
+    const title = String(req.query.title || "").trim();
+    const keywords = parseArrayParam(req.query.keyword);
+    const supervisors = parseArrayParam(req.query.supervisor);
+    const years = parseArrayParam(req.query.year).map(Number).filter(Number.isInteger);
+    const status = String(req.query.status || "APPROVED");
+    const limit = Math.min(Math.max(Number(req.query.limit) || 20, 1), 100);
+    const offset = Math.max(Number(req.query.offset) || 0, 0);
+    const sortBy = String(req.query.sortBy || "Most Recent");
 
-    const limitNum = Math.min(Number(limit) || 20, 100);
-    const offsetNum = Number(offset) || 0;
+    const supervisorUser = aliasedTable(users, "search_supervisor");
+    const conditions: any[] = [eq(projects.status, status as any)];
+    if (years.length) conditions.push(inArray(projects.submissionYear, years));
+    if (supervisors.length) conditions.push(inArray(supervisorUser.fullName, supervisors));
 
-    // Build WHERE conditions
-    const whereConditions = [];
-
-    // 1. Always apply status filter if provided
-    if (status) {
-      whereConditions.push(eq(projects.status, status as any));
+    if (title) {
+      const terms = title.split(/\s+/).filter(Boolean).slice(0, 8);
+      conditions.push(or(
+        ilike(projects.title, `%${title}%`),
+        ilike(projects.abstract, `%${title}%`),
+        ilike(metadata.researchArea, `%${title}%`),
+        ilike(metadata.methodology, `%${title}%`),
+        ...terms.map((term) => sql`${metadata.keywords}::text ILIKE ${`%${term}%`}`),
+      ));
     }
 
-    // 2. Title ILIKE Search
-    if (title && String(title).trim() !== "") {
-      whereConditions.push(ilike(projects.title, `%${String(title).trim()}%`));
+    if (keywords.length) {
+      conditions.push(or(...keywords.map((keyword) => or(
+        sql`${metadata.keywords}::text ILIKE ${`%${keyword}%`}`,
+        ilike(metadata.researchArea, `%${keyword}%`),
+        ilike(projects.title, `%${keyword}%`),
+        ilike(projects.abstract, `%${keyword}%`),
+      ))));
     }
 
-    // 3. Submission Years (IN array)
-    if (years.length > 0) {
-      whereConditions.push(inArray(projects.submissionYear, years));
-    }
+    const whereClause = and(...conditions);
+    const orderBy = sortBy === "Oldest First"
+      ? asc(projects.createdAt)
+      : sortBy === "Alphabetical"
+        ? asc(projects.title)
+        : desc(projects.updatedAt);
 
-    // 4. Supervisors Match (FullName IN array)
-    if (supervisors.length > 0) {
-      whereConditions.push(inArray(users.fullName, supervisors));
-    }
-
-    // 5. Keywords/Research Area Flexible Match
-    // Matches if keyword exists in EITHER researchArea OR keywords field (handling comma separated or partial string matches)
-    if (keywords.length > 0) {
-      const keywordConditions = keywords.flatMap((kw) => [
-        ilike(metadata.researchArea, `%${kw}%`),
-        ilike(metadata.keywords, `%${kw}%`),
-      ]);
-      whereConditions.push(sql`(${sql.join(keywordConditions, sql` OR `)})`);
-    }
-
-    const whereClause =
-      whereConditions.length > 0 ? and(...whereConditions) : undefined;
-
-    // Determine sort order
-    let orderBy: any;
-    switch (sortBy) {
-      case "Oldest First":
-        orderBy = asc(projects.createdAt);
-        break;
-      case "Alphabetical":
-        orderBy = asc(projects.title);
-        break;
-      case "Most Recent":
-      default:
-        orderBy = desc(projects.createdAt);
-    }
-
-    // Get total count for pagination with applied filters
     const [{ count }] = await db
       .select({ count: sql<number>`count(DISTINCT ${projects.id})` })
       .from(projects)
-      .leftJoin(categories, eq(projects.categoryId, categories.id))
       .leftJoin(metadata, eq(projects.id, metadata.projectId))
-      .leftJoin(users, eq(projects.supervisorId, users.id))
+      .leftJoin(users, eq(projects.studentId, users.id))
+      .leftJoin(supervisorUser, eq(projects.supervisorId, supervisorUser.id))
       .where(whereClause);
 
-    // Get paginated results
     const results = await db
       .select({
         id: projects.id,
         title: projects.title,
         abstract: projects.abstract,
+        fileUrl: projects.fileUrl,
+        publicId: projects.publicId,
         submissionYear: projects.submissionYear,
         status: projects.status,
         categoryId: projects.categoryId,
         category: categories.name,
+        keywords: metadata.keywords,
         researchArea: metadata.researchArea,
         methodology: metadata.methodology,
-        supervisor: users.fullName,
-        supervisorId: users.id,
+        researchType: projects.researchType,
+        supervisor: supervisorUser.fullName,
+        supervisorId: supervisorUser.id,
+        author: users.fullName,
         createdAt: projects.createdAt,
         updatedAt: projects.updatedAt,
       })
       .from(projects)
       .leftJoin(categories, eq(projects.categoryId, categories.id))
       .leftJoin(metadata, eq(projects.id, metadata.projectId))
-      .leftJoin(users, eq(projects.supervisorId, users.id))
+      .leftJoin(users, eq(projects.studentId, users.id))
+      .leftJoin(supervisorUser, eq(projects.supervisorId, supervisorUser.id))
       .where(whereClause)
       .orderBy(orderBy)
-      .limit(limitNum)
-      .offset(offsetNum);
+      .limit(limit)
+      .offset(offset);
 
-    // Dynamic Facets based on filtered subset
-    const keywordFacets = await db
-      .select({
-        name: metadata.researchArea,
-        count: sql<number>`count(${projects.id})`,
-      })
-      .from(projects)
-      .leftJoin(metadata, eq(projects.id, metadata.projectId))
-      .where(eq(projects.status, "APPROVED"))
-      .groupBy(metadata.researchArea);
-
-    const yearFacets = await db
-      .select({
-        year: projects.submissionYear,
-        count: sql<number>`count(${projects.id})`,
-      })
-      .from(projects)
-      .where(eq(projects.status, "APPROVED"))
-      .groupBy(projects.submissionYear)
-      .orderBy(desc(projects.submissionYear));
-
-    const supervisorFacets = await db
-      .select({
-        name: users.fullName,
-        id: users.id,
-        count: sql<number>`count(${projects.id})`,
-      })
-      .from(projects)
-      .leftJoin(users, eq(projects.supervisorId, users.id))
-      .where(eq(projects.status, "APPROVED"))
-      .groupBy(users.id, users.fullName);
-
-    const statusFacets = await db
-      .select({
-        status: projects.status,
-        count: sql<number>`count(${projects.id})`,
-      })
-      .from(projects)
-      .groupBy(projects.status);
-
-    const response: SearchResponse = {
+    const total = Number(count || 0);
+    res.status(200).json({
+      success: true,
       data: results,
+      projects: results,
       metadata: {
-        total: Number(count),
-        limit: limitNum,
-        offset: offsetNum,
-        hasNextPage: offsetNum + limitNum < Number(count),
-        facets: {
-          keywords: keywordFacets.filter((f) => f.name !== null),
-          years: yearFacets.filter((f) => f.year !== null),
-          supervisors: supervisorFacets.filter((f) => f.name !== null),
-          statuses: statusFacets,
-        },
+        total,
+        limit,
+        offset,
+        hasNextPage: offset + limit < total,
       },
-    };
-
-    res.status(200).json(response);
+    });
   } catch (error) {
     console.error("Search error:", error);
     res.status(500).json({
+      success: false,
       message: "Search failed",
-      error: error instanceof Error ? error.message : "Unknown error",
     });
   }
 };
@@ -229,7 +152,8 @@ export const getFilterOptions = async (
         keywords: metadata.keywords,
       })
       .from(metadata)
-      .innerJoin(projects, eq(metadata.projectId, projects.id));
+      .innerJoin(projects, eq(metadata.projectId, projects.id))
+      .where(eq(projects.status, "APPROVED"));
 
     const researchAreasSet = new Set<string>();
     const keywordsSet = new Set<string>();
@@ -271,6 +195,7 @@ export const getFilterOptions = async (
       })
       .from(users)
       .innerJoin(projects, eq(users.id, projects.supervisorId))
+      .where(eq(projects.status, "APPROVED"))
       .orderBy(asc(users.fullName));
 
     res.status(200).json({

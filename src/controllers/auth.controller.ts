@@ -9,9 +9,90 @@ import { generateAccessToken, generateRefreshToken } from "../utils/jwt.js";
 
 // Zod schema for validation
 const loginSchema = z.object({
-  email: z.string().email(),
+  email: z.string().trim().toLowerCase().email(),
   password: z.string().min(3),
 });
+
+const registerSchema = z.object({
+  fullName: z.string().trim().min(2, "Full name is required").max(255),
+  email: z.string().trim().toLowerCase().email("Enter a valid email address"),
+  password: z.string().min(8, "Password must be at least 8 characters").max(128),
+});
+
+export const register = async (req: Request, res: Response) => {
+  try {
+    const input = registerSchema.parse(req.body);
+
+    const existingUser = await db.query.users.findFirst({
+      where: eq(users.email, input.email),
+      columns: { id: true },
+    });
+
+    if (existingUser) {
+      return res.status(409).json({
+        success: false,
+        message: "An account with this email already exists.",
+      });
+    }
+
+    const password = await bcrypt.hash(input.password, 12);
+
+    const [user] = await db
+      .insert(users)
+      .values({
+        fullName: input.fullName,
+        email: input.email,
+        password,
+        role: "STUDENT",
+      })
+      .returning({
+        id: users.id,
+        fullName: users.fullName,
+        email: users.email,
+        role: users.role,
+        supervisorId: users.supervisorId,
+      });
+
+    const accessToken = generateAccessToken(user);
+    const refreshToken = generateRefreshToken(user.id);
+
+    await db.insert(refreshTokens).values({
+      userId: user.id,
+      token: refreshToken,
+      expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+    });
+
+    res.cookie("IRAAPRefreshToken", refreshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+      domain: process.env.COOKIE_DOMAIN || undefined,
+      path: "/",
+      maxAge: 30 * 24 * 60 * 60 * 1000,
+    });
+
+    return res.status(201).json({
+      success: true,
+      token: accessToken,
+      user,
+      message: "Account created successfully.",
+    });
+  } catch (err: any) {
+    if (err instanceof z.ZodError) {
+      return res.status(400).json({
+        success: false,
+        message: "Validation failed",
+        errors: err.issues,
+      });
+    }
+
+    console.error("Registration error:", err);
+    return res.status(500).json({
+      success: false,
+      message: "Unable to create your account right now.",
+    });
+  }
+};
 
 export const login = async (req: Request, res: Response) => {
   try {
@@ -58,9 +139,9 @@ export const login = async (req: Request, res: Response) => {
 
     res.cookie("IRAAPRefreshToken", refreshToken, {
       httpOnly: true,
-      secure: true,
-      sameSite: "none",
-      domain: ".iraap.com.ng",
+      secure: process.env.NODE_ENV === "production",
+      sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+      domain: process.env.COOKIE_DOMAIN || undefined,
       path: "/",
       maxAge: 30 * 24 * 60 * 60 * 1000,
     });

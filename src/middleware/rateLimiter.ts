@@ -54,4 +54,5 @@ export const applyGlobalSecurity = (app: Express) => {
   });
 
   app.use("/api/auth/login", authLimiter);
+  app.use("/api/auth/register", authLimiter);
 };

@@ -53,3 +53,21 @@ export const authorize = (roles: string[]) => {
     next();
   };
 };
+
+
+export const optionalAuthenticate = (
+  req: Request,
+  _res: Response,
+  next: NextFunction,
+) => {
+  const token = req.headers.authorization?.split(" ")[1];
+  if (!token) return next();
+
+  try {
+    (req as any).user = jwt.verify(token, process.env.JWT_SECRET!);
+  } catch {
+    // Public project pages remain accessible when an optional token is stale.
+  }
+
+  next();
+};

@@ -8,7 +8,7 @@ import {
   users,
 } from "../database/schema.js";
 import { uploadToCloudinary } from "../utils/fileUpload.js";
-import { and, desc, eq, ilike, sql } from "drizzle-orm";
+import { aliasedTable, and, asc, desc, eq, ilike, inArray, or, sql } from "drizzle-orm";
 import cloudinary from "../config/cloudinary.js";
 import { z } from "zod";
 import { withPagination } from "../utils/pagination.js";
@@ -26,8 +26,10 @@ const projectSchema = z.object({
   categoryId: z.preprocess((val) => Number(val), z.number().int()),
   methodology: z.string().min(1, "Methodology is required"),
   researchArea: z.string().optional().default(""),
+  researchType: z.enum(["BSC_PROJECT", "MSC_THESIS", "PHD_DISSERTATION", "JOURNAL", "INDEPENDENT_RESEARCH"]).default("BSC_PROJECT"),
   keywords: z
     .array(z.string())
+    .default([])
     .transform((arr) => arr.map((k) => sanitizeString(k))),
 });
 
@@ -58,7 +60,7 @@ export const submitProject = async (req: Request, res: Response) => {
     return errorResponse(
       res,
       400,
-      `Validation error: ${err.errors?.[0]?.message || "Invalid input"}`,
+      `Validation error: ${err.issues?.[0]?.message || "Invalid input"}`,
     );
   }
 
@@ -87,6 +89,7 @@ export const submitProject = async (req: Request, res: Response) => {
           supervisorId,
           studentId,
           categoryId: parsed.categoryId,
+          researchType: parsed.researchType,
           status: "PENDING",
           fileUrl: uploadResult.url,
           publicId: uploadResult.publicId,
@@ -157,7 +160,7 @@ export const submitProject = async (req: Request, res: Response) => {
     console.log("Submission error:", error);
     if (uploadResult?.publicId) {
       try {
-        await cloudinary.uploader.destroy(uploadResult.publicId);
+        await cloudinary.uploader.destroy(uploadResult.publicId, { resource_type: "raw" });
       } catch (cleanupError) {
         console.log("Failed to cleanup Cloudinary file:", cleanupError);
       }
@@ -194,7 +197,7 @@ export const updateProject = async (req: Request, res: Response) => {
     return errorResponse(
       res,
       400,
-      `Validation error: ${err.errors?.[0]?.message || "Invalid input"}`,
+      `Validation error: ${err.issues?.[0]?.message || "Invalid input"}`,
     );
   }
 
@@ -263,6 +266,7 @@ export const updateProject = async (req: Request, res: Response) => {
           abstract: parsed.abstract,
           submissionYear: parsed.submissionYear,
           categoryId: parsed.categoryId,
+          researchType: parsed.researchType,
           supervisorId,
           currentVersionId: newVersionId,
           totalVersions: newTotalVersions,
@@ -309,7 +313,7 @@ export const updateProject = async (req: Request, res: Response) => {
     console.log("Update error:", error);
     if (uploadResult?.publicId) {
       try {
-        await cloudinary.uploader.destroy(uploadResult.publicId);
+        await cloudinary.uploader.destroy(uploadResult.publicId, { resource_type: "raw" });
       } catch (cleanupError) {
         console.log("Failed to cleanup Cloudinary file:", cleanupError);
       }
@@ -359,12 +363,12 @@ export const getStudentSubmissions = async (req: Request, res: Response) => {
 export const getProjectDetails = async (req: Request, res: Response) => {
   const projectId = Number(req.params.id);
 
-  if (isNaN(projectId)) {
+  if (Number.isNaN(projectId)) {
     return errorResponse(res, 400, "Invalid project ID");
   }
 
   try {
-    const project = await db.query.projects.findMany({
+    const project = await db.query.projects.findFirst({
       where: eq(projects.id, projectId),
       with: {
         student: true,
@@ -379,20 +383,24 @@ export const getProjectDetails = async (req: Request, res: Response) => {
       return errorResponse(res, 404, "Project not found");
     }
 
+    const authUser = getAuthUser(req);
+    const isOwner = authUser?.id === project.studentId;
+    const isSupervisor = authUser?.id === project.supervisorId;
+    const isAdmin = authUser?.role === "ADMIN";
+
+    if (project.status !== "APPROVED" && !isOwner && !isSupervisor && !isAdmin) {
+      return errorResponse(res, 404, "Project not found");
+    }
+
     return res.status(200).json({
       message: "Project details fetched successfully",
-      project,
+      project: [project],
     });
   } catch (error) {
-    console.log("Fetch project details error:", error);
-    return errorResponse(
-      res,
-      500,
-      error instanceof Error ? error.message : "Unknown database error",
-    );
+    console.error("Fetch project details error:", error);
+    return errorResponse(res, 500, "Unable to fetch project details");
   }
 };
-
 export const getProjectVersionHistory = async (req: Request, res: Response) => {
   const authUser = getAuthUser(req);
   if (!authUser) {
@@ -537,104 +545,132 @@ export const getProjectVersion = async (req: Request, res: Response) => {
 
 export const getAllProjects = async (req: Request, res: Response) => {
   try {
-    const page = Number(req.query.page) || 1;
-    const limit = Number(req.query.limit) || 20;
+    const page = Math.max(Number(req.query.page) || 1, 1);
+    const limit = Math.min(Math.max(Number(req.query.limit) || 20, 1), 100);
 
-    const {
-      title,
-      year,
-      researchArea,
-      methodology,
-      categoryId,
-      status = "APPROVED",
-      researchType,
-      keyword,
-    } = req.query;
+    const parseArray = (value: unknown): string[] => {
+      if (Array.isArray(value)) return value.map(String).map((v) => v.trim()).filter(Boolean);
+      if (typeof value === "string") return value.split(",").map((v) => v.trim()).filter(Boolean);
+      return [];
+    };
 
-    const conditions = [
-      eq(projects.status, status as any),
+    const title = String(req.query.title || "").trim();
+    const status = String(req.query.status || "APPROVED");
+    const researchArea = String(req.query.researchArea || "").trim();
+    const methodology = String(req.query.methodology || "").trim();
+    const researchType = String(req.query.researchType || "").trim();
+    const categoryIds = parseArray(req.query.categoryId).map(Number).filter(Number.isInteger);
+    const years = parseArray(req.query.year).map(Number).filter(Number.isInteger);
+    const keywords = parseArray(req.query.keyword);
+    const supervisors = parseArray(req.query.supervisor);
+    const sortBy = String(req.query.sortBy || "Most Recent");
 
-      categoryId ? eq(projects.categoryId, Number(categoryId)) : undefined,
+    const supervisorUser = aliasedTable(users, "project_supervisor");
+    const conditions: any[] = [eq(projects.status, status as any)];
 
-      title ? ilike(projects.title, `%${String(title).trim()}%`) : undefined,
+    if (categoryIds.length) conditions.push(inArray(projects.categoryId, categoryIds));
+    if (years.length) conditions.push(inArray(projects.submissionYear, years));
+    if (supervisors.length) conditions.push(inArray(supervisorUser.fullName, supervisors));
+    if (researchType) conditions.push(eq(projects.researchType, researchType as any));
 
-      year ? eq(projects.submissionYear, Number(year)) : undefined,
+    if (title) {
+      const terms = title.split(/\s+/).filter(Boolean).slice(0, 8);
+      conditions.push(or(
+        ilike(projects.title, `%${title}%`),
+        ilike(projects.abstract, `%${title}%`),
+        ilike(metadata.researchArea, `%${title}%`),
+        ilike(metadata.methodology, `%${title}%`),
+        ...terms.map((term) => sql`${metadata.keywords}::text ILIKE ${`%${term}%`}`),
+      ));
+    }
 
-      researchArea
-        ? ilike(metadata.researchArea, `%${String(researchArea).trim()}%`)
-        : undefined,
+    if (researchArea) conditions.push(ilike(metadata.researchArea, `%${researchArea}%`));
+    if (methodology) conditions.push(ilike(metadata.methodology, `%${methodology}%`));
 
-      methodology
-        ? ilike(metadata.methodology, `%${String(methodology).trim()}%`)
-        : undefined,
+    if (keywords.length) {
+      conditions.push(or(
+        ...keywords.map((keyword) => or(
+          sql`${metadata.keywords}::text ILIKE ${`%${keyword}%`}`,
+          ilike(metadata.researchArea, `%${keyword}%`),
+          ilike(projects.title, `%${keyword}%`),
+          ilike(projects.abstract, `%${keyword}%`),
+        )),
+      ));
+    }
 
-      researchType ? eq(projects.researchType, researchType as any) : undefined,
+    const whereClause = and(...conditions);
 
-      // Keyword filter
-      keyword
-        ? Array.isArray(keyword)
-          ? sql`${metadata.keywords} && ARRAY[
-              ${sql.join(
-                keyword.map((k) => sql`${String(k).trim()}::text`),
-                sql`, `,
-              )}
-            ]::text[]`
-          : sql`${metadata.keywords} @> ARRAY[
-              ${String(keyword).trim()}::text
-            ]::text[]`
-        : undefined,
-    ];
+    let orderBy: any = desc(projects.updatedAt);
+    if (sortBy === "Oldest First") orderBy = asc(projects.createdAt);
+    if (sortBy === "Alphabetical") orderBy = asc(projects.title);
 
-    const whereClause = and(...conditions.filter(Boolean));
+    const offset = (page - 1) * limit;
 
-    const result = await withPagination({
-      page,
-      limit,
+    const countRows = await db
+      .select({ count: sql<number>`count(DISTINCT ${projects.id})` })
+      .from(projects)
+      .leftJoin(categories, eq(projects.categoryId, categories.id))
+      .leftJoin(metadata, eq(projects.id, metadata.projectId))
+      .leftJoin(users, eq(projects.studentId, users.id))
+      .leftJoin(supervisorUser, eq(projects.supervisorId, supervisorUser.id))
+      .where(whereClause);
 
-      countQuery: db
-        .select({
-          count: sql<number>`cast(count(*) as integer)`,
-        })
-        .from(projects)
-        .leftJoin(metadata, eq(projects.id, metadata.projectId))
-        .where(whereClause),
+    const total = Number(countRows[0]?.count || 0);
 
-      dataQuery: (limit, offset) =>
-        db
-          .select({
-            id: projects.id,
-            title: projects.title,
-            abstract: projects.abstract,
-            fileUrl: projects.fileUrl,
-            submissionYear: projects.submissionYear,
-            status: projects.status,
-            categoryId: projects.categoryId,
-            category: categories.name,
-            keywords: metadata.keywords,
-            researchArea: metadata.researchArea,
-            researchType: projects.researchType,
-            methodology: metadata.methodology,
-            totalVersions: projects.totalVersions,
-            author: users.fullName,
-            createdAt: projects.createdAt,
-            updatedAt: projects.updatedAt,
-          })
-          .from(projects)
-          .leftJoin(categories, eq(projects.categoryId, categories.id))
-          .leftJoin(metadata, eq(projects.id, metadata.projectId))
-          .leftJoin(users, eq(projects.studentId, users.id))
-          .where(whereClause)
-          .orderBy(desc(projects.updatedAt))
-          .limit(limit)
-          .offset(offset),
-    });
+    const rows = await db
+      .select({
+        id: projects.id,
+        title: projects.title,
+        abstract: projects.abstract,
+        fileUrl: projects.fileUrl,
+        publicId: projects.publicId,
+        submissionYear: projects.submissionYear,
+        status: projects.status,
+        categoryId: projects.categoryId,
+        category: categories.name,
+        keywords: metadata.keywords,
+        researchArea: metadata.researchArea,
+        researchType: projects.researchType,
+        methodology: metadata.methodology,
+        totalVersions: projects.totalVersions,
+        author: users.fullName,
+        createdAt: projects.createdAt,
+        updatedAt: projects.updatedAt,
+      })
+      .from(projects)
+      .leftJoin(categories, eq(projects.categoryId, categories.id))
+      .leftJoin(metadata, eq(projects.id, metadata.projectId))
+      .leftJoin(users, eq(projects.studentId, users.id))
+      .leftJoin(supervisorUser, eq(projects.supervisorId, supervisorUser.id))
+      .where(whereClause)
+      .orderBy(orderBy)
+      .limit(limit)
+      .offset(offset);
+
+    const totalPages = Math.ceil(total / limit);
 
     return res.status(200).json({
+      success: true,
       message: "Projects fetched successfully",
-      ...result,
+      data: rows,
+      metadata: {
+        total,
+        page,
+        limit,
+        totalPages,
+        hasNextPage: page < totalPages,
+      },
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages,
+        hasNextPage: page < totalPages,
+        hasPreviousPage: page > 1,
+      },
     });
   } catch (error) {
-    console.log(error);
-    return errorResponse(res, 500, "Error fetching projects");
+    console.error("Fetch projects error:", error);
+    return errorResponse(res, 500, "Unable to fetch projects");
   }
 };

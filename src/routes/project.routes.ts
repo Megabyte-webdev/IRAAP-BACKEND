@@ -8,8 +8,8 @@ import {
   updateProject,
   getAllProjects,
 } from "../controllers/project.controller.js";
-import { authenticate, authorize } from "../middleware/auth.js";
-import { upload } from "../middleware/upload.js";
+import { authenticate, authorize, optionalAuthenticate } from "../middleware/auth.js";
+import { uploadPdf } from "../middleware/upload.js";
 import {
   publishProject,
   releaseProjectForPublication,
@@ -22,7 +22,7 @@ router.post(
   "/submit",
   authenticate,
   authorize(["STUDENT"]),
-  upload.single("file"),
+  uploadPdf("file"),
   submitProject,
 );
 
@@ -31,7 +31,7 @@ router.put(
   "/:id",
   authenticate,
   authorize(["STUDENT"]),
-  upload.single("file"),
+  uploadPdf("file"),
   updateProject,
 );
 
@@ -74,6 +74,6 @@ router.post(
 );
 
 router.get("/", getAllProjects);
-router.get("/:id", getProjectDetails);
+router.get("/:id", optionalAuthenticate, getProjectDetails);
 
 export default router;
