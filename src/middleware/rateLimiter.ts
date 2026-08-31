@@ -1,14 +1,16 @@
 import type { Express } from "express";
 import { rateLimit } from "express-rate-limit";
-import { RedisStore } from "rate-limit-redis";
+import { RedisStore, type RedisReply } from "rate-limit-redis";
 import { redisConnection } from "../config/redis.js";
 import helmet from "helmet";
 const globalStore = new RedisStore({
-  sendCommand: (...args: string[]) => redisConnection.call(...args),
+  sendCommand: (command: string, ...args: string[]) =>
+    redisConnection.call(command, ...args) as Promise<RedisReply>,
 });
 
 const authStore = new RedisStore({
-  sendCommand: (...args: string[]) => redisConnection.call(...args),
+  sendCommand: (command: string, ...args: string[]) =>
+    redisConnection.call(command, ...args) as Promise<RedisReply>,
 });
 
 export const applyGlobalSecurity = (app: Express) => {
