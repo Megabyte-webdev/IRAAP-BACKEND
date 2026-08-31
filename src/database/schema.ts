@@ -59,6 +59,12 @@ export const versionTriggerEnum = pgEnum("version_trigger", [
   "STUDENT_UPDATE",
   "REVISION_SUBMISSION",
 ]);
+export const authOtpPurposeEnum = pgEnum("auth_otp_purpose", [
+  "SIGNUP",
+  "LOGIN",
+  "PASSWORD_RESET",
+]);
+
 export const meetingStatusEnum = pgEnum("meeting_status", [
   "SCHEDULED",
   "ONGOING",
@@ -73,6 +79,7 @@ export const users = pgTable(
     fullName: varchar("full_name", { length: 255 }).notNull(),
     email: varchar("email", { length: 255 }).unique().notNull(),
     password: text("password").notNull(),
+    emailVerifiedAt: timestamp("email_verified_at"),
     role: roleEnum("role").default("STUDENT").notNull(),
     supervisorId: integer("supervisor_id").references(() => users.id),
     createdAt: timestamp("created_at").defaultNow(),
@@ -383,6 +390,27 @@ export const meetings = pgTable("meetings", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
+
+export const authOtpChallenges = pgTable(
+  "auth_otp_challenges",
+  {
+    id: varchar("id", { length: 64 }).primaryKey(),
+    userId: integer("user_id").references(() => users.id, { onDelete: "cascade" }),
+    email: varchar("email", { length: 255 }).notNull(),
+    purpose: authOtpPurposeEnum("purpose").notNull(),
+    codeHash: varchar("code_hash", { length: 64 }).notNull(),
+    expiresAt: timestamp("expires_at").notNull(),
+    attempts: integer("attempts").default(0).notNull(),
+    consumedAt: timestamp("consumed_at"),
+    lastSentAt: timestamp("last_sent_at").notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    emailPurposeIndex: index("auth_otp_email_purpose_idx").on(table.email, table.purpose),
+    userPurposeIndex: index("auth_otp_user_purpose_idx").on(table.userId, table.purpose),
+    expiresIndex: index("auth_otp_expires_idx").on(table.expiresAt),
+  }),
+);
 
 export const refreshTokens = pgTable("refresh_tokens", {
   id: serial("id").primaryKey(),

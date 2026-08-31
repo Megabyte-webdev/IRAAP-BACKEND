@@ -8,15 +8,18 @@ export async function uploadToCloudinary(fileBuffer: Buffer) {
     resourceType: string;
     format?: string;
   }>((resolve, reject) => {
-    const publicId = `research_projects/${crypto.randomUUID()}.pdf`;
+    const publicId = crypto.randomUUID();
 
     const stream = cloudinary.uploader.upload_stream(
       {
-        resource_type: "raw",
+        folder: "research_projects",
         public_id: publicId,
+        resource_type: "raw",
+        format: "pdf",
       },
       (error, result) => {
         if (error) {
+          console.error("[CLOUDINARY] Upload error:", error);
           return reject(error);
         }
 
@@ -24,11 +27,14 @@ export async function uploadToCloudinary(fileBuffer: Buffer) {
           return reject(new Error("Cloudinary returned no result"));
         }
 
-        console.log("Cloudinary upload:", {
+        console.log("[CLOUDINARY] Upload result:", {
           secure_url: result.secure_url,
           public_id: result.public_id,
           resource_type: result.resource_type,
           format: result.format,
+          original_filename: result.original_filename,
+          version: result.version,
+          bytes: result.bytes,
         });
 
         resolve({
