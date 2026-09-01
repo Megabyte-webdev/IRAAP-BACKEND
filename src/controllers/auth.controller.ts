@@ -17,7 +17,7 @@ import {
 } from "../utils/otp.js";
 import { sendEmail } from "../services/mail.js";
 import { authOtpTemplate } from "../utils/email/templates/authOtp.js";
-import { closeUserConnections } from "../services/ws.js";
+import { disconnectUser } from "../services/ws.js";
 
 const loginSchema = z.object({
   email: z.string().trim().toLowerCase().email(),
@@ -45,15 +45,12 @@ const forgotPasswordSchema = z.object({
 
 const resetPasswordSchema = z.object({
   challengeId: z.string().min(20).max(64),
-  code: z.string().regex(/^\\d{6}$/, "Enter the 6-digit verification code"),
+  code: z.string().regex(/^\d{6}$/, "Enter the 6-digit code"),
   password: z.string().min(8).max(128),
 });
 
 const hash = (value: string) =>
   crypto.createHash("sha256").update(value).digest("hex");
-
-const GENERIC_PASSWORD_RESET_MESSAGE =
-  "If an account exists for that email, we will send a verification code shortly.";
 
 const issueSession = async (res: Response, user: any) => {
   const accessToken = generateAccessToken(user);
@@ -81,13 +78,11 @@ const createOtpChallenge = async ({
   email,
   purpose,
   challengeId,
-  sendCode = true,
 }: {
   user?: any;
   email: string;
   purpose: "SIGNUP" | "LOGIN" | "PASSWORD_RESET";
   challengeId?: string;
-  sendCode?: boolean;
 }) => {
   const id = challengeId || crypto.randomUUID().replace(/-/g, "");
   const code = generateOtp();
@@ -103,21 +98,19 @@ const createOtpChallenge = async ({
     lastSentAt: now,
   });
 
-  if (sendCode) {
-    const result = await sendEmail(
-      email,
-      purpose === "LOGIN"
-        ? "Your IRAAP sign-in code"
-        : purpose === "SIGNUP"
-          ? "Verify your IRAAP account"
-          : "Your IRAAP password reset code",
-      authOtpTemplate({ fullName: user?.fullName, code, purpose }),
-    );
+  const result = await sendEmail(
+    email,
+    purpose === "LOGIN"
+      ? "Your IRAAP sign-in code"
+      : purpose === "SIGNUP"
+        ? "Verify your IRAAP account"
+        : "Your IRAAP password reset code",
+    authOtpTemplate({ fullName: user?.fullName, code, purpose }),
+  );
 
-    if (!result.success) {
-      await db.delete(authOtpChallenges).where(eq(authOtpChallenges.id, id));
-      throw new Error("Unable to send verification code right now.");
-    }
+  if (!result.success) {
+    await db.delete(authOtpChallenges).where(eq(authOtpChallenges.id, id));
+    throw new Error("Unable to send verification code right now.");
   }
 
   return id;
@@ -242,6 +235,13 @@ export const verifyOtp = async (req: Request, res: Response) => {
       ),
     });
 
+    if (challenge?.purpose === "PASSWORD_RESET") {
+      return res.status(400).json({
+        success: false,
+        message: "Use the password reset form to complete this request.",
+      });
+    }
+
     if (!challenge || challenge.expiresAt.getTime() <= Date.now()) {
       return res
         .status(400)
@@ -340,6 +340,146 @@ export const verifyOtp = async (req: Request, res: Response) => {
   }
 };
 
+
+export const forgotPassword = async (req: Request, res: Response) => {
+  try {
+    const { email } = forgotPasswordSchema.parse(req.body);
+    const user: any = await db.query.users.findFirst({
+      where: eq(users.email, email),
+    });
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        code: "ACCOUNT_NOT_FOUND",
+        message: "No IRAAP account is registered with this email address.",
+      });
+    }
+
+    const challengeId = await createOtpChallenge({
+      user,
+      email: user.email,
+      purpose: "PASSWORD_RESET",
+    });
+
+    return res.json({
+      success: true,
+      requiresOtp: true,
+      purpose: "PASSWORD_RESET",
+      challengeId,
+      email: user.email,
+      message: "We sent a password reset code to your email.",
+    });
+  } catch (err: any) {
+    if (err instanceof z.ZodError) {
+      return res.status(400).json({
+        success: false,
+        message: "Enter a valid email address.",
+      });
+    }
+
+    console.error("Forgot password error:", err);
+    return res.status(500).json({
+      success: false,
+      message: "We could not start password recovery right now.",
+    });
+  }
+};
+
+export const resetPassword = async (req: Request, res: Response) => {
+  try {
+    const { challengeId, code, password } = resetPasswordSchema.parse(req.body);
+    const challenge: any = await db.query.authOtpChallenges.findFirst({
+      where: and(
+        eq(authOtpChallenges.id, challengeId),
+        eq(authOtpChallenges.purpose, "PASSWORD_RESET"),
+        isNull(authOtpChallenges.consumedAt),
+      ),
+    });
+
+    if (!challenge || challenge.expiresAt.getTime() <= Date.now()) {
+      return res.status(400).json({
+        success: false,
+        message: "This reset code is invalid or expired.",
+      });
+    }
+
+    if (challenge.attempts >= OTP_MAX_ATTEMPTS) {
+      return res.status(429).json({
+        success: false,
+        message: "Too many incorrect attempts. Request a new reset code.",
+      });
+    }
+
+    const valid = safeEqual(hashOtp(challenge.id, code), challenge.codeHash);
+    if (!valid) {
+      await db
+        .update(authOtpChallenges)
+        .set({ attempts: challenge.attempts + 1 })
+        .where(eq(authOtpChallenges.id, challenge.id));
+
+      return res.status(400).json({
+        success: false,
+        message: "Incorrect reset code.",
+      });
+    }
+
+    if (!challenge.userId) {
+      return res.status(400).json({
+        success: false,
+        message: "This reset session is invalid.",
+      });
+    }
+
+    const user: any = await db.query.users.findFirst({
+      where: eq(users.id, challenge.userId),
+    });
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "Account no longer exists.",
+      });
+    }
+
+    const passwordHash = await bcrypt.hash(password, 12);
+
+    await db.transaction(async (tx) => {
+      await tx
+        .update(users)
+        .set({ password: passwordHash, updatedAt: new Date() })
+        .where(eq(users.id, user.id));
+
+      await tx
+        .update(authOtpChallenges)
+        .set({ consumedAt: new Date() })
+        .where(eq(authOtpChallenges.id, challenge.id));
+
+      await tx.delete(refreshTokens).where(eq(refreshTokens.userId, user.id));
+    });
+
+    disconnectUser(user.id, 4003, "Password changed. Please sign in again.");
+
+    return res.json({
+      success: true,
+      message: "Your password has been changed successfully. Please sign in again.",
+    });
+  } catch (err: any) {
+    if (err instanceof z.ZodError) {
+      return res.status(400).json({
+        success: false,
+        message: "Enter a valid 6-digit code and a password of at least 8 characters.",
+      });
+    }
+
+    console.error("Password reset error:", err);
+    return res.status(500).json({
+      success: false,
+      message: "Unable to reset your password right now.",
+    });
+  }
+};
+
 export const resendOtp = async (req: Request, res: Response) => {
   try {
     const { challengeId } = resendSchema.parse(req.body);
@@ -406,194 +546,11 @@ export const resendOtp = async (req: Request, res: Response) => {
   }
 };
 
-export const forgotPassword = async (req: Request, res: Response) => {
-  const startedAt = Date.now();
-
-  try {
-    const input = forgotPasswordSchema.parse(req.body);
-
-    const user: any = await db.query.users.findFirst({
-      where: eq(users.email, input.email),
-    });
-
-    // Always create the same outward response. For a non-existent account,
-    // create an inert challenge with no userId so the response shape/timing
-    // remains consistent without revealing whether the account exists.
-    const challengeId = await createOtpChallenge({
-      user: user ?? undefined,
-      email: input.email,
-      purpose: "PASSWORD_RESET",
-      sendCode: Boolean(user),
-    });
-
-    // For an unknown address, the challenge is inert and no email is sent.
-    // The same response shape is returned for both cases.
-    if (!user) {
-      await db
-        .update(authOtpChallenges)
-        .set({ consumedAt: new Date() })
-        .where(eq(authOtpChallenges.id, challengeId));
-    }
-
-    // Keep the outward response timing reasonably uniform for existing and
-    // non-existing accounts.
-    const minimumResponseMs = 350;
-    const elapsed = Date.now() - startedAt;
-    if (elapsed < minimumResponseMs) {
-      await new Promise((resolve) =>
-        setTimeout(resolve, minimumResponseMs - elapsed),
-      );
-    }
-
-    return res.json({
-      success: true,
-      message: GENERIC_PASSWORD_RESET_MESSAGE,
-      // The challenge id is intentionally returned for both cases. A
-      // non-existent account receives an inert challenge and therefore
-      // cannot turn this into an account-enumeration signal.
-      challengeId,
-      email: input.email,
-      purpose: "PASSWORD_RESET",
-    });
-  } catch (err: any) {
-    if (err instanceof z.ZodError) {
-      return res.status(200).json({
-        success: true,
-        message: GENERIC_PASSWORD_RESET_MESSAGE,
-      });
-    }
-
-    console.error("Forgot password error:", err);
-    return res.status(200).json({
-      success: true,
-      message: GENERIC_PASSWORD_RESET_MESSAGE,
-    });
-  }
-};
-
-export const resetPassword = async (req: Request, res: Response) => {
-  try {
-    const { challengeId, code, password } = resetPasswordSchema.parse(req.body);
-
-    const challenge: any = await db.query.authOtpChallenges.findFirst({
-      where: and(
-        eq(authOtpChallenges.id, challengeId),
-        eq(authOtpChallenges.purpose, "PASSWORD_RESET"),
-        isNull(authOtpChallenges.consumedAt),
-      ),
-    });
-
-    if (!challenge || challenge.expiresAt.getTime() <= Date.now()) {
-      return res.status(400).json({
-        success: false,
-        message: "This verification code is invalid or expired.",
-      });
-    }
-
-    if (!challenge.userId) {
-      return res.status(400).json({
-        success: false,
-        message: "This verification code is invalid or expired.",
-      });
-    }
-
-    if (challenge.attempts >= OTP_MAX_ATTEMPTS) {
-      return res.status(429).json({
-        success: false,
-        message: "Too many incorrect attempts. Request a new code.",
-      });
-    }
-
-    const valid = safeEqual(hashOtp(challenge.id, code), challenge.codeHash);
-
-    if (!valid) {
-      await db
-        .update(authOtpChallenges)
-        .set({ attempts: challenge.attempts + 1 })
-        .where(eq(authOtpChallenges.id, challenge.id));
-
-      return res.status(400).json({
-        success: false,
-        message: "Incorrect verification code.",
-      });
-    }
-
-    const user: any = await db.query.users.findFirst({
-      where: eq(users.id, challenge.userId),
-    });
-
-    if (!user) {
-      return res.status(400).json({
-        success: false,
-        message: "This verification code is invalid or expired.",
-      });
-    }
-
-    const passwordHash = await bcrypt.hash(password, 12);
-
-    await db.transaction(async (tx) => {
-      await tx
-        .update(users)
-        .set({
-          password: passwordHash,
-          updatedAt: new Date(),
-        })
-        .where(eq(users.id, user.id));
-
-      await tx
-        .update(authOtpChallenges)
-        .set({ consumedAt: new Date() })
-        .where(eq(authOtpChallenges.id, challenge.id));
-
-      // Password changes invalidate every previously issued refresh session.
-      await tx
-        .delete(refreshTokens)
-        .where(eq(refreshTokens.userId, user.id));
-    });
-
-    // A password reset is a security event: terminate active realtime
-    // sessions so an existing WebSocket cannot survive credential recovery.
-    closeUserConnections(
-      user.id,
-      4003,
-      "Password reset completed",
-    );
-
-    return res.json({
-      success: true,
-      message: "Your password has been reset. Please sign in again.",
-    });
-  } catch (err: any) {
-    if (err instanceof z.ZodError) {
-      return res.status(400).json({
-        success: false,
-        message: "Enter a valid code and password.",
-      });
-    }
-
-    console.error("Reset password error:", err);
-    return res.status(500).json({
-      success: false,
-      message: "Unable to reset your password right now.",
-    });
-  }
-};
-
 export const logout = async (req: Request, res: Response) => {
   try {
     const token = req.cookies.IRAAPRefreshToken;
-    if (token) {
-      const session = await db.query.refreshTokens.findFirst({
-        where: eq(refreshTokens.token, token),
-        columns: { userId: true },
-      });
-
+    if (token)
       await db.delete(refreshTokens).where(eq(refreshTokens.token, token));
-
-      if (session?.userId) {
-        closeUserConnections(session.userId, 4003, "Signed out");
-      }
-    }
   } finally {
     res.clearCookie("IRAAPRefreshToken", {
       path: "/",

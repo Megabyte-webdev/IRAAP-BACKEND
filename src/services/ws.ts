@@ -16,25 +16,19 @@ interface JWTPayload {
 }
 export const clients: ClientMap = new Map();
 
-/**
- * Close every active realtime connection for a user.
- * Used for security events such as logout/password reset.
- */
-export function closeUserConnections(userId: number, code = 1000, reason = "Session ended") {
+export function disconnectUser(userId: number, code = 4003, reason = "Session ended") {
   const socket = clients.get(userId);
   if (!socket) return;
 
   (socket as any)._replaced = true;
-  clients.delete(userId);
-
   try {
     socket.close(code, reason);
-  } catch {
-    try {
-      socket.terminate();
-    } catch {
-      // Socket is already closed.
-    }
+  } catch (error) {
+    console.warn(`[WS] failed to close user ${userId} socket`, error);
+  }
+
+  if (clients.get(userId) === socket) {
+    clients.delete(userId);
   }
 }
 
