@@ -8,6 +8,7 @@ import adminRoutes from "./src/routes/admin.routes.js";
 import supervisorRoutes from "./src/routes/supervisor.routes.js";
 import chatRoutes from "./src/routes/chat.routes.js";
 import meetingRoutes from "./src/routes/meeting.routes.js";
+import profileRoutes from "./src/routes/profile.routes.js";
 import cors from "cors";
 import { applyGlobalSecurity } from "./src/middleware/rateLimiter.js";
 import "./src/listeners/email.listener.js";
@@ -46,7 +47,6 @@ app.use((err, _req, res, _next) => {
     .json({ message: err.message || "Internal Server Error" });
 });
 
-
 //Ping endpoint for Render health checks or external pinger
 app.get("/ping", (_req, res) => {
   res.status(200).send("pong");
@@ -62,6 +62,7 @@ app.use("/admin", adminRoutes);
 app.use("/supervisor", supervisorRoutes);
 app.use("/chat", chatRoutes);
 app.use("/meetings", meetingRoutes);
+app.use("/profile", profileRoutes);
 
 app.post("/push/subscribe", (req, res) => {
   const { userId, subscription } = req.body;
@@ -103,11 +104,10 @@ const startSelfPing = () => {
       });
   }, FOURTEEN_MINUTES);
 };
-  
 
 server.listen(Number(port), "0.0.0.0", () => {
   testDbConnection();
-  startSelfPing()
+  startSelfPing();
 
   // Log the port specifically for Railway debugging
   console.log(
