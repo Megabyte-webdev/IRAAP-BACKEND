@@ -15,7 +15,7 @@ RUN pnpm install --frozen-lockfile
 COPY . .
 
 # Expose app port
-EXPOSE 8000
+EXPOSE 10000
 
 # Start app
 CMD ["pnpm", "run", "start"]

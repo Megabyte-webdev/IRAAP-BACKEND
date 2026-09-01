@@ -13,24 +13,9 @@ interface JWTPayload {
   role: "STUDENT" | "SUPERVISOR" | "ADMIN";
   fullName: string;
   email: string;
+  profileImageUrl?: string | null;
 }
 export const clients: ClientMap = new Map();
-
-export function disconnectUser(userId: number, code = 4003, reason = "Session ended") {
-  const socket = clients.get(userId);
-  if (!socket) return;
-
-  (socket as any)._replaced = true;
-  try {
-    socket.close(code, reason);
-  } catch (error) {
-    console.warn(`[WS] failed to close user ${userId} socket`, error);
-  }
-
-  if (clients.get(userId) === socket) {
-    clients.delete(userId);
-  }
-}
 
 export function initWebSocket(server: any) {
   const wss = new WebSocketServer({ server });
@@ -80,6 +65,7 @@ export function initWebSocket(server: any) {
       ws.userRole = decoded.role;
       ws.fullName = decoded.fullName;
       ws.email = decoded.email;
+      (ws as any).profileImageUrl = decoded.profileImageUrl ?? null;
 
       // Close stale socket — but mark it so its close handler
       // does NOT broadcast offline (we're immediately replacing it)

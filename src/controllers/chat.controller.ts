@@ -290,6 +290,7 @@ export async function getMessages(
           id: true,
           fullName: true,
           role: true,
+          profileImageUrl: true,
         },
       },
 

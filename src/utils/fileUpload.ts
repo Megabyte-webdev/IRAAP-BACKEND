@@ -14,7 +14,7 @@ export async function uploadToCloudinary(fileBuffer: Buffer) {
       {
         folder: "research_projects",
         public_id: publicId,
-        resource_type: "raw",
+        resource_type: "image",
         format: "pdf",
       },
       (error, result) => {

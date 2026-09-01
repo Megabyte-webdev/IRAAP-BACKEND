@@ -160,7 +160,7 @@ export const submitProject = async (req: Request, res: Response) => {
     console.log("Submission error:", error);
     if (uploadResult?.publicId) {
       try {
-        await cloudinary.uploader.destroy(uploadResult.publicId, { resource_type: "raw" });
+        await cloudinary.uploader.destroy(uploadResult.publicId, { resource_type: "image" });
       } catch (cleanupError) {
         console.log("Failed to cleanup Cloudinary file:", cleanupError);
       }
@@ -313,7 +313,7 @@ export const updateProject = async (req: Request, res: Response) => {
     console.log("Update error:", error);
     if (uploadResult?.publicId) {
       try {
-        await cloudinary.uploader.destroy(uploadResult.publicId, { resource_type: "raw" });
+        await cloudinary.uploader.destroy(uploadResult.publicId, { resource_type: "image" });
       } catch (cleanupError) {
         console.log("Failed to cleanup Cloudinary file:", cleanupError);
       }

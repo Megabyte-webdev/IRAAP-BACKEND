@@ -50,22 +50,6 @@ export const applyGlobalSecurity = (app: Express) => {
 
   app.use("/api/auth/login", authLimiter);
   app.use("/api/auth/register", authLimiter);
-  app.use("/api/auth/forgot-password", rateLimit({
-    windowMs: 15 * 60 * 1000,
-    max: 5,
-    standardHeaders: true,
-    legacyHeaders: false,
-    store: authStore,
-    message: { status: 429, success: false, message: "Too many password recovery requests. Please try again later." },
-  }));
-  app.use("/api/auth/reset-password", rateLimit({
-    windowMs: 10 * 60 * 1000,
-    max: 10,
-    standardHeaders: true,
-    legacyHeaders: false,
-    store: authStore,
-    message: { status: 429, success: false, message: "Too many password reset attempts. Please request a new code." },
-  }));
   app.use(
     "/api/auth/verify-otp",
     rateLimit({
@@ -86,6 +70,18 @@ export const applyGlobalSecurity = (app: Express) => {
       legacyHeaders: false,
       store: authStore,
       message: { status: 429, success: false, message: "Too many code requests. Please try again later." },
+    }),
+  );
+
+  app.use(
+    "/api/profile/me/image",
+    rateLimit({
+      windowMs: 60 * 60 * 1000,
+      max: 10,
+      standardHeaders: true,
+      legacyHeaders: false,
+      store: authStore,
+      message: { status: 429, success: false, message: "Too many profile photo uploads. Please try again later." },
     }),
   );
 };

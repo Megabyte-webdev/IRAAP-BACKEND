@@ -251,6 +251,8 @@ async function handleChatSend(
         id: ws.userId,
         fullName: ws.fullName,
         role: ws.userRole,
+        profileImage: (ws as any).profileImageUrl ?? null,
+        profileImageUrl: (ws as any).profileImageUrl ?? null,
       },
       meeting: meetingPayload,
     },
