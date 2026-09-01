@@ -50,6 +50,37 @@ export const applyGlobalSecurity = (app: Express) => {
 
   app.use("/api/auth/login", authLimiter);
   app.use("/api/auth/register", authLimiter);
+
+  // Recovery endpoints must count successful HTTP responses too; otherwise
+  // the deliberate generic 200 response could be abused for email flooding.
+  const recoveryLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 5,
+    standardHeaders: true,
+    legacyHeaders: false,
+    store: authStore,
+    message: {
+      status: 429,
+      success: false,
+      message: "Too many password recovery requests. Please try again later.",
+    },
+  });
+
+  const resetLimiter = rateLimit({
+    windowMs: 10 * 60 * 1000,
+    max: 15,
+    standardHeaders: true,
+    legacyHeaders: false,
+    store: authStore,
+    message: {
+      status: 429,
+      success: false,
+      message: "Too many password reset attempts. Request a new code.",
+    },
+  });
+
+  app.use("/api/auth/forgot-password", recoveryLimiter);
+  app.use("/api/auth/reset-password", resetLimiter);
   app.use(
     "/api/auth/verify-otp",
     rateLimit({
