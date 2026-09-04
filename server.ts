@@ -9,6 +9,10 @@ import supervisorRoutes from "./src/routes/supervisor.routes.js";
 import chatRoutes from "./src/routes/chat.routes.js";
 import meetingRoutes from "./src/routes/meeting.routes.js";
 import profileRoutes from "./src/routes/profile.routes.js";
+import analyticsRoutes from "./src/routes/analytics.routes.js";
+import organizationRoutes from "./src/routes/organization.routes.js";
+import publicationRoutes from "./src/routes/publication.routes.js";
+import supportRoutes from "./src/routes/support.routes.js";
 import cors from "cors";
 import { applyGlobalSecurity } from "./src/middleware/rateLimiter.js";
 import "./src/listeners/email.listener.js";
@@ -21,7 +25,6 @@ import { initWebSocket } from "./src/services/ws.js";
 import { saveSubscription } from "./src/utils/pushStore.js";
 import bodyParser from "body-parser";
 import cookieParser from "cookie-parser";
-import publicationRoutes from "./src/routes/publication.routes.js";
 dotenv.config();
 
 const app = express();
@@ -63,6 +66,9 @@ app.use("/supervisor", supervisorRoutes);
 app.use("/chat", chatRoutes);
 app.use("/meetings", meetingRoutes);
 app.use("/profile", profileRoutes);
+app.use("/analytics", analyticsRoutes);
+app.use("/organizations", organizationRoutes);
+app.use("/support", supportRoutes);
 
 app.post("/push/subscribe", (req, res) => {
   const { userId, subscription } = req.body;
