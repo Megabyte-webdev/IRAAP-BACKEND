@@ -1,7 +1,8 @@
 import type { Request, Response } from "express";
-import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import bcrypt from "bcrypt";
 import { z } from "zod";
+
 import {
   organizationMemberships,
   organizations,
@@ -11,9 +12,12 @@ import {
   publicationRequests,
   downloads,
 } from "../database/schema.js";
+
 import { db } from "../config/db.js";
 import { errorResponse, sanitizeString } from "../utils/helper.js";
+
 import { slugifyOrganization } from "../utils/organization.js";
+
 import { eventBus } from "../events/index.js";
 import { Events } from "../utils/email/email.types.js";
 
@@ -32,15 +36,17 @@ const memberSchema = z.object({
 
 const importSchema = z.object({
   organizationId: z.number().int().positive(),
-  members: z.array(
-    z.object({
-      fullName: z.string().min(2),
-      email: z.string().email(),
-      role: z.enum(["STUDENT", "SUPERVISOR", "RESEARCHER"]),
-      department: z.string().optional(),
-      externalRef: z.string().optional(),
-    }),
-  ).min(1),
+  members: z
+    .array(
+      z.object({
+        fullName: z.string().min(2),
+        email: z.string().email(),
+        role: z.enum(["STUDENT", "SUPERVISOR", "RESEARCHER"]),
+        department: z.string().optional(),
+        externalRef: z.string().optional(),
+      }),
+    )
+    .min(1),
 });
 
 const subscriptionSchema = z.object({
@@ -54,26 +60,52 @@ const subscriptionSchema = z.object({
 
 export const createOrganization = async (req: Request, res: Response) => {
   const adminId = Number((req as any).user?.id);
+
   const parsed = organizationSchema.safeParse(req.body);
-  if (!parsed.success) return errorResponse(res, 400, parsed.error.issues[0]?.message || "Invalid organization data");
+
+  if (!parsed.success) {
+    return errorResponse(
+      res,
+      400,
+      parsed.error.issues[0]?.message || "Invalid organization data",
+    );
+  }
 
   const cleanName = sanitizeString(parsed.data.name);
+
   let slug = slugifyOrganization(cleanName);
-  if (!slug) slug = `organization-${Date.now()}`;
+
+  if (!slug) {
+    slug = `organization-${Date.now()}`;
+  }
 
   try {
-    const existing = await db.query.organizations.findFirst({ where: eq(organizations.slug, slug) });
-    if (existing) slug = `${slug}-${Date.now().toString().slice(-6)}`;
+    const existing = await db.query.organizations.findFirst({
+      where: eq(organizations.slug, slug),
+    });
+
+    if (existing) {
+      slug = `${slug}-${Date.now().toString().slice(-6)}`;
+    }
 
     const result = await db.transaction(async (tx) => {
-      const [organization] = await tx.insert(organizations).values({
-        name: cleanName,
-        slug,
-        code: parsed.data.code?.trim() || null,
-        description: parsed.data.description ? sanitizeString(parsed.data.description) : null,
-        createdBy: adminId,
-        updatedAt: new Date(),
-      }).returning();
+      const [organization] = (await tx
+        .insert(organizations)
+        .values({
+          name: cleanName,
+          slug,
+          code: parsed.data.code?.trim() || null,
+          description: parsed.data.description
+            ? sanitizeString(parsed.data.description)
+            : null,
+          createdBy: adminId,
+          updatedAt: new Date(),
+        })
+        .returning()) as any;
+
+      if (!organization) {
+        throw new Error("Organization creation failed");
+      }
 
       await tx.insert(organizationSubscriptions).values({
         organizationId: organization.id,
@@ -81,12 +113,13 @@ export const createOrganization = async (req: Request, res: Response) => {
         status: "TRIAL",
         startsAt: new Date(),
       });
-
       return organization;
     });
 
-    return res.status(201).json({ organization: result });
-  } catch (error: any) {
+    return res.status(201).json({
+      organization: result,
+    });
+  } catch (error) {
     console.error("createOrganization error", error);
     return errorResponse(res, 500, "Failed to create organization");
   }
@@ -96,42 +129,108 @@ export const getOrganizations = async (_req: Request, res: Response) => {
   try {
     const data = await db.query.organizations.findMany({
       orderBy: [desc(organizations.createdAt)],
+
       with: {
-        subscriptions: { orderBy: [desc(organizationSubscriptions.createdAt)], limit: 1 },
+        subscriptions: {
+          orderBy: [desc(organizationSubscriptions.createdAt)],
+          limit: 1,
+        },
       },
     });
 
-    const organizationsWithStats = await Promise.all(data.map(async (org) => {
-      const [students, supervisors, researchers, projectsCount, publicationsCount] = await Promise.all([
-        db.select({ count: sql<number>`count(*)::int` }).from(organizationMemberships).where(and(eq(organizationMemberships.organizationId, org.id), eq(organizationMemberships.role, "STUDENT"))),
-        db.select({ count: sql<number>`count(*)::int` }).from(organizationMemberships).where(and(eq(organizationMemberships.organizationId, org.id), eq(organizationMemberships.role, "SUPERVISOR"))),
-        db.select({ count: sql<number>`count(*)::int` }).from(organizationMemberships).where(and(eq(organizationMemberships.organizationId, org.id), eq(organizationMemberships.role, "RESEARCHER"))),
-        db.select({ count: sql<number>`count(*)::int` }).from(projects).where(eq(projects.organizationId, org.id)),
-        db.select({ count: sql<number>`count(*)::int` }).from(publicationRequests).where(eq(publicationRequests.organizationId, org.id)),
-      ]);
-      return {
-        ...org,
-        latestSubscription: org.subscriptions?.[0] ?? null,
-        counts: {
-          students: students[0]?.count ?? 0,
-          supervisors: supervisors[0]?.count ?? 0,
-          researchers: researchers[0]?.count ?? 0,
-          projects: projectsCount[0]?.count ?? 0,
-          publications: publicationsCount[0]?.count ?? 0,
-        },
-      };
-    }));
+    const organizationsWithStats = await Promise.all(
+      data.map(async (org) => {
+        const [
+          students,
+          supervisors,
+          researchers,
+          projectsCount,
+          publicationsCount,
+        ] = await Promise.all([
+          db
+            .select({
+              count: sql<number>`count(*)::int`,
+            })
+            .from(organizationMemberships)
+            .where(
+              and(
+                eq(organizationMemberships.organizationId, org.id),
 
-    return res.json({ organizations: organizationsWithStats });
+                eq(organizationMemberships.role, "STUDENT"),
+              ),
+            ),
+
+          db
+            .select({
+              count: sql<number>`count(*)::int`,
+            })
+            .from(organizationMemberships)
+            .where(
+              and(
+                eq(organizationMemberships.organizationId, org.id),
+
+                eq(organizationMemberships.role, "SUPERVISOR"),
+              ),
+            ),
+
+          db
+            .select({
+              count: sql<number>`count(*)::int`,
+            })
+            .from(organizationMemberships)
+            .where(
+              and(
+                eq(organizationMemberships.organizationId, org.id),
+
+                eq(organizationMemberships.role, "RESEARCHER"),
+              ),
+            ),
+
+          db
+            .select({
+              count: sql<number>`count(*)::int`,
+            })
+            .from(projects)
+            .where(eq(projects.organizationId, org.id)),
+
+          db
+            .select({
+              count: sql<number>`count(*)::int`,
+            })
+            .from(publicationRequests)
+            .where(eq(publicationRequests.organizationId, org.id)),
+        ]);
+
+        return {
+          ...org,
+          latestSubscription: org.subscriptions?.[0] ?? null,
+          counts: {
+            students: students[0]?.count ?? 0,
+            supervisors: supervisors[0]?.count ?? 0,
+            researchers: researchers[0]?.count ?? 0,
+            projects: projectsCount[0]?.count ?? 0,
+            publications: publicationsCount[0]?.count ?? 0,
+          },
+        };
+      }),
+    );
+
+    return res.json({
+      organizations: organizationsWithStats,
+    });
   } catch (error) {
     console.error("getOrganizations error", error);
+
     return errorResponse(res, 500, "Failed to fetch organizations");
   }
 };
 
 export const getOrganizationMembers = async (req: Request, res: Response) => {
   const organizationId = Number(req.params.organizationId);
-  if (!organizationId) return errorResponse(res, 400, "Invalid organization id");
+
+  if (!organizationId) {
+    return errorResponse(res, 400, "Invalid organization id");
+  }
 
   try {
     const members = await db.query.organizationMemberships.findMany({
@@ -139,13 +238,24 @@ export const getOrganizationMembers = async (req: Request, res: Response) => {
       orderBy: [desc(organizationMemberships.createdAt)],
       with: {
         user: {
-          columns: { id: true, fullName: true, email: true, role: true, department: true, matricNumber: true },
+          columns: {
+            id: true,
+            fullName: true,
+            email: true,
+            role: true,
+            department: true,
+            matricNumber: true,
+          },
         },
       },
     });
-    return res.json({ members });
+
+    return res.json({
+      members,
+    });
   } catch (error) {
     console.error("getOrganizationMembers error", error);
+
     return errorResponse(res, 500, "Failed to fetch organization members");
   }
 };
@@ -153,41 +263,76 @@ export const getOrganizationMembers = async (req: Request, res: Response) => {
 export const addOrganizationMember = async (req: Request, res: Response) => {
   const organizationId = Number(req.params.organizationId);
   const parsed = memberSchema.safeParse(req.body);
-  if (!organizationId || !parsed.success) return errorResponse(res, 400, "Invalid member data");
+
+  if (!organizationId || !parsed.success) {
+    return errorResponse(res, 400, "Invalid member data");
+  }
 
   try {
-    const user = await db.query.users.findFirst({ where: eq(users.id, parsed.data.userId) });
-    if (!user) return errorResponse(res, 404, "User not found");
+    const user = await db.query.users.findFirst({
+      where: eq(users.id, parsed.data.userId),
+    });
 
-    const [membership] = await db.insert(organizationMemberships).values({
-      organizationId,
-      userId: parsed.data.userId,
-      role: parsed.data.role,
-      department: parsed.data.department?.trim() || null,
-      externalRef: parsed.data.externalRef?.trim() || null,
-      updatedAt: new Date(),
-    }).onConflictDoUpdate({
-      target: [organizationMemberships.organizationId, organizationMemberships.userId],
-      set: {
+    if (!user) {
+      return errorResponse(res, 404, "User not found");
+    }
+
+    const [membership] = await db
+      .insert(organizationMemberships)
+      .values({
+        organizationId,
+        userId: parsed.data.userId,
         role: parsed.data.role,
         department: parsed.data.department?.trim() || null,
         externalRef: parsed.data.externalRef?.trim() || null,
         updatedAt: new Date(),
-      },
-    }).returning();
+      })
+      .onConflictDoUpdate({
+        target: [
+          organizationMemberships.organizationId,
+          organizationMemberships.userId,
+        ],
 
-    await db.update(users).set({ organizationId, updatedAt: new Date() }).where(eq(users.id, user.id));
+        set: {
+          role: parsed.data.role,
+          department: parsed.data.department?.trim() || null,
+          externalRef: parsed.data.externalRef?.trim() || null,
+          updatedAt: new Date(),
+        },
+      })
+      .returning();
 
-    return res.status(201).json({ membership });
+    await db
+      .update(users)
+      .set({
+        organizationId,
+        updatedAt: new Date(),
+      })
+      .where(eq(users.id, user.id));
+
+    return res.status(201).json({
+      membership,
+    });
   } catch (error) {
     console.error("addOrganizationMember error", error);
+
     return errorResponse(res, 500, "Failed to update organization membership");
   }
 };
 
-export const bulkImportOrganizationMembers = async (req: Request, res: Response) => {
+export const bulkImportOrganizationMembers = async (
+  req: Request,
+  res: Response,
+) => {
   const parsed = importSchema.safeParse(req.body);
-  if (!parsed.success) return errorResponse(res, 400, parsed.error.issues[0]?.message || "Invalid import data");
+
+  if (!parsed.success) {
+    return errorResponse(
+      res,
+      400,
+      parsed.error.issues[0]?.message || "Invalid import data",
+    );
+  }
 
   try {
     let created = 0;
@@ -195,52 +340,87 @@ export const bulkImportOrganizationMembers = async (req: Request, res: Response)
 
     for (const member of parsed.data.members) {
       const email = member.email.toLowerCase().trim();
-      let user = await db.query.users.findFirst({ where: eq(users.email, email) });
+
+      let user = await db.query.users.findFirst({
+        where: eq(users.email, email),
+      });
+
+      let generatedPassword: string | null = null;
 
       if (!user) {
         const passwordSeed = email.split("@")[0];
-        const password = await bcrypt.hash(`${passwordSeed}@irap`, 12);
-        const [createdUser] = await db.insert(users).values({
-          fullName: member.fullName.trim(),
-          email,
-          password,
-          role: member.role === "SUPERVISOR" ? "SUPERVISOR" : "STUDENT",
-          organizationId: parsed.data.organizationId,
-          updatedAt: new Date(),
-        }).returning();
+        generatedPassword = `${passwordSeed}@irap`;
+        const password = await bcrypt.hash(generatedPassword, 12);
+        const [createdUser] = (await db
+          .insert(users)
+          .values({
+            fullName: member.fullName.trim(),
+            email,
+            password,
+            role: member.role === "SUPERVISOR" ? "SUPERVISOR" : "STUDENT",
+            organizationId: parsed.data.organizationId,
+            updatedAt: new Date(),
+          })
+          .returning()) as any;
+
+        if (!createdUser) {
+          throw new Error(`Failed to create user ${email}`);
+        }
+
         user = createdUser;
         created += 1;
       } else {
         existing += 1;
+
         if (!user.organizationId) {
-          await db.update(users).set({ organizationId: parsed.data.organizationId, updatedAt: new Date() }).where(eq(users.id, user.id));
+          await db
+            .update(users)
+            .set({
+              organizationId: parsed.data.organizationId,
+              updatedAt: new Date(),
+            })
+            .where(eq(users.id, user.id));
         }
       }
 
-      await db.insert(organizationMemberships).values({
-        organizationId: parsed.data.organizationId,
-        userId: user.id,
-        role: member.role,
-        department: member.department?.trim() || null,
-        externalRef: member.externalRef?.trim() || null,
-        updatedAt: new Date(),
-      }).onConflictDoUpdate({
-        target: [organizationMemberships.organizationId, organizationMemberships.userId],
-        set: {
+      await db
+        .insert(organizationMemberships)
+        .values({
+          organizationId: parsed.data.organizationId,
+          userId: user.id,
           role: member.role,
           department: member.department?.trim() || null,
           externalRef: member.externalRef?.trim() || null,
           updatedAt: new Date(),
-        },
-      });
+        })
+        .onConflictDoUpdate({
+          target: [
+            organizationMemberships.organizationId,
+            organizationMemberships.userId,
+          ],
 
-      eventBus.emit(Events.USER_REGISTERED, {
-        fullName: user.fullName,
-        email: user.email,
-        password: `${email.split("@")[0]}@irap`,
-        role: member.role === "SUPERVISOR" ? "Supervisor" : member.role === "RESEARCHER" ? "Researcher" : "Student",
-        senderType: "organization-onboarding",
-      });
+          set: {
+            role: member.role,
+            department: member.department?.trim() || null,
+            externalRef: member.externalRef?.trim() || null,
+            updatedAt: new Date(),
+          },
+        });
+
+      if (generatedPassword) {
+        eventBus.emit(Events.USER_REGISTERED, {
+          fullName: user.fullName,
+          email: user.email,
+          password: generatedPassword,
+          role:
+            member.role === "SUPERVISOR"
+              ? "Supervisor"
+              : member.role === "RESEARCHER"
+                ? "Researcher"
+                : "Student",
+          senderType: "organization-onboarding",
+        });
+      }
     }
 
     return res.status(201).json({
@@ -255,46 +435,120 @@ export const bulkImportOrganizationMembers = async (req: Request, res: Response)
   }
 };
 
-
 export const removeOrganizationMember = async (req: Request, res: Response) => {
   const organizationId = Number(req.params.organizationId);
   const userId = Number(req.params.userId);
-  if (!organizationId || !userId) return errorResponse(res, 400, "Invalid organization or user id");
+
+  if (!organizationId || !userId) {
+    return errorResponse(res, 400, "Invalid organization or user id");
+  }
 
   try {
-    await db.delete(organizationMemberships).where(and(
-      eq(organizationMemberships.organizationId, organizationId),
-      eq(organizationMemberships.userId, userId),
-    ));
+    await db
+      .delete(organizationMemberships)
+      .where(
+        and(
+          eq(organizationMemberships.organizationId, organizationId),
+          eq(organizationMemberships.userId, userId),
+        ),
+      );
 
     const remaining = await db.query.organizationMemberships.findFirst({
       where: eq(organizationMemberships.userId, userId),
     });
 
-    await db.update(users).set({
-      organizationId: remaining?.organizationId ?? null,
-      updatedAt: new Date(),
-    }).where(eq(users.id, userId));
+    await db
+      .update(users)
+      .set({
+        organizationId: remaining?.organizationId ?? null,
+        updatedAt: new Date(),
+      })
+      .where(eq(users.id, userId));
 
-    return res.json({ success: true, message: "Organization membership removed" });
+    return res.json({
+      success: true,
+      message: "Organization membership removed",
+    });
   } catch (error) {
     console.error("removeOrganizationMember error", error);
+
     return errorResponse(res, 500, "Failed to remove organization member");
   }
 };
 
 export const getOrganizationAnalytics = async (req: Request, res: Response) => {
   const organizationId = Number(req.params.organizationId);
-  if (!organizationId) return errorResponse(res, 400, "Invalid organization id");
+
+  if (!organizationId) {
+    return errorResponse(res, 400, "Invalid organization id");
+  }
 
   try {
-    const [members, activeProjects, approvedProjects, pendingPublications, approvedPublications, downloads] = await Promise.all([
-      db.select({ count: sql<number>`count(*)::int` }).from(organizationMemberships).where(eq(organizationMemberships.organizationId, organizationId)),
-      db.select({ count: sql<number>`count(*)::int` }).from(projects).where(eq(projects.organizationId, organizationId)),
-      db.select({ count: sql<number>`count(*)::int` }).from(projects).where(and(eq(projects.organizationId, organizationId), eq(projects.status, "APPROVED"))),
-      db.select({ count: sql<number>`count(*)::int` }).from(publicationRequests).where(and(eq(publicationRequests.organizationId, organizationId), eq(publicationRequests.status, "PENDING"))),
-      db.select({ count: sql<number>`count(*)::int` }).from(publicationRequests).where(and(eq(publicationRequests.organizationId, organizationId), eq(publicationRequests.status, "APPROVED"))),
-      db.select({ count: sql<number>`count(*)::int` }).from(downloads).innerJoin(projects, eq(downloads.projectId, projects.id)).where(eq(projects.organizationId, organizationId)),
+    const [
+      members,
+      activeProjects,
+      approvedProjects,
+      pendingPublications,
+      approvedPublications,
+      downloadRows,
+    ] = await Promise.all([
+      db
+        .select({
+          count: sql<number>`count(*)::int`,
+        })
+        .from(organizationMemberships)
+        .where(eq(organizationMemberships.organizationId, organizationId)),
+
+      db
+        .select({
+          count: sql<number>`count(*)::int`,
+        })
+        .from(projects)
+        .where(eq(projects.organizationId, organizationId)),
+
+      db
+        .select({
+          count: sql<number>`count(*)::int`,
+        })
+        .from(projects)
+        .where(
+          and(
+            eq(projects.organizationId, organizationId),
+            eq(projects.status, "APPROVED"),
+          ),
+        ),
+
+      db
+        .select({
+          count: sql<number>`count(*)::int`,
+        })
+        .from(publicationRequests)
+        .where(
+          and(
+            eq(publicationRequests.organizationId, organizationId),
+            eq(publicationRequests.status, "PENDING"),
+          ),
+        ),
+
+      db
+        .select({
+          count: sql<number>`count(*)::int`,
+        })
+        .from(publicationRequests)
+        .where(
+          and(
+            eq(publicationRequests.organizationId, organizationId),
+            eq(publicationRequests.status, "APPROVED"),
+          ),
+        ),
+
+      db
+        .select({
+          count: sql<number>`count(*)::int`,
+        })
+        .from(downloads)
+        .innerJoin(projects, eq(downloads.projectId, projects.id))
+        .where(eq(projects.organizationId, organizationId)),
     ]);
 
     return res.json({
@@ -304,24 +558,26 @@ export const getOrganizationAnalytics = async (req: Request, res: Response) => {
         approvedProjects: approvedProjects[0]?.count ?? 0,
         pendingPublications: pendingPublications[0]?.count ?? 0,
         approvedPublications: approvedPublications[0]?.count ?? 0,
-        downloads: downloads[0]?.count ?? 0,
+        downloads: downloadRows[0]?.count ?? 0,
       },
     });
   } catch (error) {
     console.error("getOrganizationAnalytics error", error);
+
     return errorResponse(res, 500, "Failed to fetch organization analytics");
   }
 };
 
-/**
- * Subscription scaffolding only. No subscription enforcement is attached to
- * the application yet. Billing provider integration can replace these
- * endpoints later without changing the rest of the feature set.
- */
-export const upsertOrganizationSubscription = async (req: Request, res: Response) => {
+export const upsertOrganizationSubscription = async (
+  req: Request,
+  res: Response,
+) => {
   const organizationId = Number(req.params.organizationId);
   const parsed = subscriptionSchema.safeParse(req.body);
-  if (!organizationId || !parsed.success) return errorResponse(res, 400, "Invalid subscription data");
+
+  if (!organizationId || !parsed.success) {
+    return errorResponse(res, 400, "Invalid subscription data");
+  }
 
   try {
     const existing = await db.query.organizationSubscriptions.findFirst({
@@ -341,10 +597,17 @@ export const upsertOrganizationSubscription = async (req: Request, res: Response
     };
 
     const [subscription] = existing
-      ? await db.update(organizationSubscriptions).set(values).where(eq(organizationSubscriptions.id, existing.id)).returning()
+      ? await db
+          .update(organizationSubscriptions)
+          .set(values)
+          .where(eq(organizationSubscriptions.id, existing.id))
+          .returning()
       : await db.insert(organizationSubscriptions).values(values).returning();
 
-    return res.json({ subscription, enforced: false });
+    return res.json({
+      subscription,
+      enforced: false,
+    });
   } catch (error) {
     console.error("upsertOrganizationSubscription error", error);
     return errorResponse(res, 500, "Failed to update subscription");
