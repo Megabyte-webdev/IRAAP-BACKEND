@@ -87,6 +87,39 @@ export const meetingStatusEnum = pgEnum("meeting_status", [
   "CANCELLED",
 ]);
 
+export const users = pgTable(
+  "users",
+  {
+    id: serial("id").primaryKey(),
+    organizationId: integer("organization_id").references(
+      () => organizations.id,
+      { onDelete: "set null" },
+    ),
+    fullName: varchar("full_name", { length: 255 }).notNull(),
+    email: varchar("email", { length: 255 }).unique().notNull(),
+    password: text("password").notNull(),
+    emailVerifiedAt: timestamp("email_verified_at"),
+    profileImageUrl: text("profile_image_url"),
+    profileImagePublicId: text("profile_image_public_id"),
+    phone: varchar("phone", { length: 30 }),
+    matricNumber: varchar("matric_number", { length: 80 }),
+    department: varchar("department", { length: 255 }),
+    programme: varchar("programme", { length: 255 }),
+    level: varchar("level", { length: 50 }),
+    academicSession: varchar("academic_session", { length: 50 }),
+    bio: text("bio"),
+    profileCompletedAt: timestamp("profile_completed_at"),
+    role: roleEnum("role").default("STUDENT").notNull(),
+    supervisorId: integer("supervisor_id").references(() => users.id),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => ({
+    emailIndex: index("users_email_idx").on(table.email),
+    supervisorIndex: index("users_supervisor_idx").on(table.supervisorId),
+  }),
+);
+
 export const organizations = pgTable(
   "organizations",
   {
@@ -144,7 +177,9 @@ export const organizationSubscriptions = pgTable(
     startsAt: timestamp("starts_at").notNull().defaultNow(),
     endsAt: timestamp("ends_at"),
     externalCustomerId: varchar("external_customer_id", { length: 255 }),
-    externalSubscriptionId: varchar("external_subscription_id", { length: 255 }),
+    externalSubscriptionId: varchar("external_subscription_id", {
+      length: 255,
+    }),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
@@ -162,13 +197,18 @@ export const supportTickets = pgTable(
     requesterId: integer("requester_id").references(() => users.id, {
       onDelete: "set null",
     }),
-    organizationId: integer("organization_id").references(() => organizations.id, {
-      onDelete: "set null",
-    }),
+    organizationId: integer("organization_id").references(
+      () => organizations.id,
+      {
+        onDelete: "set null",
+      },
+    ),
     fullName: varchar("full_name", { length: 255 }).notNull(),
     email: varchar("email", { length: 255 }).notNull(),
     role: varchar("role", { length: 100 }),
-    subject: varchar("subject", { length: 255 }).notNull().default("General Support"),
+    subject: varchar("subject", { length: 255 })
+      .notNull()
+      .default("General Support"),
     message: text("message").notNull(),
     status: varchar("status", { length: 40 }).notNull().default("OPEN"),
     adminNote: text("admin_note"),
@@ -179,36 +219,6 @@ export const supportTickets = pgTable(
   (table) => ({
     statusIndex: index("support_ticket_status_idx").on(table.status),
     emailIndex: index("support_ticket_email_idx").on(table.email),
-  }),
-);
-
-export const users = pgTable(
-  "users",
-  {
-    id: serial("id").primaryKey(),
-    organizationId: integer("organization_id").references(() => organizations.id, { onDelete: "set null" }),
-    fullName: varchar("full_name", { length: 255 }).notNull(),
-    email: varchar("email", { length: 255 }).unique().notNull(),
-    password: text("password").notNull(),
-    emailVerifiedAt: timestamp("email_verified_at"),
-    profileImageUrl: text("profile_image_url"),
-    profileImagePublicId: text("profile_image_public_id"),
-    phone: varchar("phone", { length: 30 }),
-    matricNumber: varchar("matric_number", { length: 80 }),
-    department: varchar("department", { length: 255 }),
-    programme: varchar("programme", { length: 255 }),
-    level: varchar("level", { length: 50 }),
-    academicSession: varchar("academic_session", { length: 50 }),
-    bio: text("bio"),
-    profileCompletedAt: timestamp("profile_completed_at"),
-    role: roleEnum("role").default("STUDENT").notNull(),
-    supervisorId: integer("supervisor_id").references(() => users.id),
-    createdAt: timestamp("created_at").defaultNow(),
-    updatedAt: timestamp("updated_at").defaultNow(),
-  },
-  (table) => ({
-    emailIndex: index("users_email_idx").on(table.email),
-    supervisorIndex: index("users_supervisor_idx").on(table.supervisorId),
   }),
 );
 
@@ -262,7 +272,10 @@ export const projects = pgTable(
   "projects",
   {
     id: serial("id").primaryKey(),
-    organizationId: integer("organization_id").references(() => organizations.id, { onDelete: "set null" }),
+    organizationId: integer("organization_id").references(
+      () => organizations.id,
+      { onDelete: "set null" },
+    ),
     title: text("title").notNull(),
     abstract: text("abstract").notNull(),
 
@@ -308,7 +321,10 @@ export const publicationRequests = pgTable(
   "publication_requests",
   {
     id: serial("id").primaryKey(),
-    organizationId: integer("organization_id").references(() => organizations.id, { onDelete: "set null" }),
+    organizationId: integer("organization_id").references(
+      () => organizations.id,
+      { onDelete: "set null" },
+    ),
 
     projectId: integer("project_id").references(() => projects.id, {
       onDelete: "cascade",
@@ -518,7 +534,9 @@ export const authOtpChallenges = pgTable(
   "auth_otp_challenges",
   {
     id: varchar("id", { length: 64 }).primaryKey(),
-    userId: integer("user_id").references(() => users.id, { onDelete: "cascade" }),
+    userId: integer("user_id").references(() => users.id, {
+      onDelete: "cascade",
+    }),
     email: varchar("email", { length: 255 }).notNull(),
     purpose: authOtpPurposeEnum("purpose").notNull(),
     codeHash: varchar("code_hash", { length: 64 }).notNull(),
@@ -529,8 +547,14 @@ export const authOtpChallenges = pgTable(
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => ({
-    emailPurposeIndex: index("auth_otp_email_purpose_idx").on(table.email, table.purpose),
-    userPurposeIndex: index("auth_otp_user_purpose_idx").on(table.userId, table.purpose),
+    emailPurposeIndex: index("auth_otp_email_purpose_idx").on(
+      table.email,
+      table.purpose,
+    ),
+    userPurposeIndex: index("auth_otp_user_purpose_idx").on(
+      table.userId,
+      table.purpose,
+    ),
     expiresIndex: index("auth_otp_expires_idx").on(table.expiresAt),
   }),
 );
@@ -551,19 +575,22 @@ export const refreshTokens = pgTable("refresh_tokens", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
-export const organizationsRelations = relations(organizations, ({ one, many }) => ({
-  creator: one(users, {
-    fields: [organizations.createdBy],
-    references: [users.id],
-    relationName: "organizationCreator",
+export const organizationsRelations = relations(
+  organizations,
+  ({ one, many }) => ({
+    creator: one(users, {
+      fields: [organizations.createdBy],
+      references: [users.id],
+      relationName: "organizationCreator",
+    }),
+    memberships: many(organizationMemberships),
+    subscriptions: many(organizationSubscriptions),
+    projects: many(projects),
+    publications: many(publicationRequests),
+    primaryUsers: many(users, { relationName: "primaryOrganization" }),
+    supportTickets: many(supportTickets),
   }),
-  memberships: many(organizationMemberships),
-  subscriptions: many(organizationSubscriptions),
-  projects: many(projects),
-  publications: many(publicationRequests),
-  primaryUsers: many(users, { relationName: "primaryOrganization" }),
-  supportTickets: many(supportTickets),
-}));
+);
 
 export const organizationMembershipsRelations = relations(
   organizationMemberships,
@@ -613,7 +640,9 @@ export const usersRelations = relations(users, ({ many, one }) => ({
 
   reviews: many(reviews),
   memberships: many(organizationMemberships),
-  createdOrganizations: many(organizations, { relationName: "organizationCreator" }),
+  createdOrganizations: many(organizations, {
+    relationName: "organizationCreator",
+  }),
   subscriptionsAsOwner: many(organizationSubscriptions),
   supportTickets: many(supportTickets),
   organization: one(organizations, {

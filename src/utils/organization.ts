@@ -1,6 +1,10 @@
 import { and, eq } from "drizzle-orm";
 import { db } from "../config/db.js";
-import { organizationMemberships, organizations, users } from "../database/schema.js";
+import {
+  organizationMemberships,
+  organizations,
+  users,
+} from "../database/schema.js";
 
 export const getPrimaryOrganization = async (userId: number) => {
   const membership = await db.query.organizationMemberships.findFirst({
@@ -29,11 +33,23 @@ export const userBelongsToOrganization = async (
 export const ensurePrimaryOrganization = async (userId: number) => {
   const user = await db.query.users.findFirst({
     where: eq(users.id, userId),
-    columns: { organizationId: true },
+    columns: {
+      organizationId: true,
+    },
   });
-  if (user?.organizationId) return user.organizationId;
-  const org = await getPrimaryOrganization(userId);
-  return org?.id ?? null;
+
+  if (user?.organizationId) {
+    return user.organizationId;
+  }
+
+  const membership = await db.query.organizationMemberships.findFirst({
+    where: eq(organizationMemberships.userId, userId),
+    columns: {
+      organizationId: true,
+    },
+  });
+
+  return membership?.organizationId ?? null;
 };
 
 export const slugifyOrganization = (name: string) =>
