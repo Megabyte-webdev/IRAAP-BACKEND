@@ -78,16 +78,24 @@ export const bulkAssignSupervisor = async (req: Request, res: Response) => {
       where: eq(users.id, supervisorId),
     });
 
-    if (!supervisor) {
+    if (!supervisor || supervisor.role !== "SUPERVISOR") {
       return res
-        .status(440)
-        .json({ success: false, message: "Supervisor record not found" });
+        .status(400)
+        .json({ success: false, message: "A valid supervisor account is required" });
     }
 
     const targets = await db
-      .select({ fullName: users.fullName, email: users.email })
+      .select({ id: users.id, fullName: users.fullName, email: users.email, role: users.role, organizationId: users.organizationId })
       .from(users)
       .where(inArray(users.id, studentIds));
+
+    if (targets.length !== studentIds.length || targets.some((student) => student.role !== "STUDENT")) {
+      return res.status(400).json({ success: false, message: "All selected accounts must be valid students" });
+    }
+
+    if (supervisor.organizationId && targets.some((student) => student.organizationId && student.organizationId !== supervisor.organizationId)) {
+      return res.status(400).json({ success: false, message: "Supervisor and students must belong to the same organization" });
+    }
 
     await db.transaction(async (tx) => {
       await tx

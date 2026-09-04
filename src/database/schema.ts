@@ -14,6 +14,21 @@ import { pgEnum } from "drizzle-orm/pg-core";
 
 export const roleEnum = pgEnum("role", ["STUDENT", "SUPERVISOR", "ADMIN"]);
 
+export const organizationMemberRoleEnum = pgEnum("organization_member_role", [
+  "STUDENT",
+  "SUPERVISOR",
+  "RESEARCHER",
+  "MANAGER",
+]);
+
+export const subscriptionStatusEnum = pgEnum("subscription_status", [
+  "TRIAL",
+  "ACTIVE",
+  "PAST_DUE",
+  "CANCELLED",
+  "EXPIRED",
+]);
+
 export const statusEnum = pgEnum("status", [
   "PENDING",
   "APPROVED",
@@ -72,10 +87,106 @@ export const meetingStatusEnum = pgEnum("meeting_status", [
   "CANCELLED",
 ]);
 
+export const organizations = pgTable(
+  "organizations",
+  {
+    id: serial("id").primaryKey(),
+    name: varchar("name", { length: 255 }).notNull(),
+    slug: varchar("slug", { length: 180 }).unique().notNull(),
+    code: varchar("code", { length: 80 }).unique(),
+    description: text("description"),
+    createdBy: integer("created_by").references(() => users.id),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    slugIndex: index("organizations_slug_idx").on(table.slug),
+  }),
+);
+
+export const organizationMemberships = pgTable(
+  "organization_memberships",
+  {
+    id: serial("id").primaryKey(),
+    organizationId: integer("organization_id")
+      .references(() => organizations.id, { onDelete: "cascade" })
+      .notNull(),
+    userId: integer("user_id")
+      .references(() => users.id, { onDelete: "cascade" })
+      .notNull(),
+    role: organizationMemberRoleEnum("role").notNull(),
+    department: varchar("department", { length: 255 }),
+    externalRef: varchar("external_ref", { length: 120 }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    organizationUserUnique: unique("organization_membership_org_user").on(
+      table.organizationId,
+      table.userId,
+    ),
+    organizationIndex: index("organization_membership_org_idx").on(
+      table.organizationId,
+    ),
+    userIndex: index("organization_membership_user_idx").on(table.userId),
+  }),
+);
+
+export const organizationSubscriptions = pgTable(
+  "organization_subscriptions",
+  {
+    id: serial("id").primaryKey(),
+    organizationId: integer("organization_id")
+      .references(() => organizations.id, { onDelete: "cascade" })
+      .notNull(),
+    planCode: varchar("plan_code", { length: 80 }).notNull().default("FREE"),
+    status: subscriptionStatusEnum("status").notNull().default("TRIAL"),
+    startsAt: timestamp("starts_at").notNull().defaultNow(),
+    endsAt: timestamp("ends_at"),
+    externalCustomerId: varchar("external_customer_id", { length: 255 }),
+    externalSubscriptionId: varchar("external_subscription_id", { length: 255 }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    organizationIndex: index("organization_subscriptions_org_idx").on(
+      table.organizationId,
+    ),
+  }),
+);
+
+export const supportTickets = pgTable(
+  "support_tickets",
+  {
+    id: serial("id").primaryKey(),
+    requesterId: integer("requester_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    organizationId: integer("organization_id").references(() => organizations.id, {
+      onDelete: "set null",
+    }),
+    fullName: varchar("full_name", { length: 255 }).notNull(),
+    email: varchar("email", { length: 255 }).notNull(),
+    role: varchar("role", { length: 100 }),
+    subject: varchar("subject", { length: 255 }).notNull().default("General Support"),
+    message: text("message").notNull(),
+    status: varchar("status", { length: 40 }).notNull().default("OPEN"),
+    adminNote: text("admin_note"),
+    resolvedAt: timestamp("resolved_at"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    statusIndex: index("support_ticket_status_idx").on(table.status),
+    emailIndex: index("support_ticket_email_idx").on(table.email),
+  }),
+);
+
 export const users = pgTable(
   "users",
   {
     id: serial("id").primaryKey(),
+    organizationId: integer("organization_id").references(() => organizations.id, { onDelete: "set null" }),
     fullName: varchar("full_name", { length: 255 }).notNull(),
     email: varchar("email", { length: 255 }).unique().notNull(),
     password: text("password").notNull(),
@@ -151,6 +262,7 @@ export const projects = pgTable(
   "projects",
   {
     id: serial("id").primaryKey(),
+    organizationId: integer("organization_id").references(() => organizations.id, { onDelete: "set null" }),
     title: text("title").notNull(),
     abstract: text("abstract").notNull(),
 
@@ -196,6 +308,7 @@ export const publicationRequests = pgTable(
   "publication_requests",
   {
     id: serial("id").primaryKey(),
+    organizationId: integer("organization_id").references(() => organizations.id, { onDelete: "set null" }),
 
     projectId: integer("project_id").references(() => projects.id, {
       onDelete: "cascade",
@@ -438,7 +551,56 @@ export const refreshTokens = pgTable("refresh_tokens", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
-export const usersRelations = relations(users, ({ many }) => ({
+export const organizationsRelations = relations(organizations, ({ one, many }) => ({
+  creator: one(users, {
+    fields: [organizations.createdBy],
+    references: [users.id],
+    relationName: "organizationCreator",
+  }),
+  memberships: many(organizationMemberships),
+  subscriptions: many(organizationSubscriptions),
+  projects: many(projects),
+  publications: many(publicationRequests),
+  primaryUsers: many(users, { relationName: "primaryOrganization" }),
+  supportTickets: many(supportTickets),
+}));
+
+export const organizationMembershipsRelations = relations(
+  organizationMemberships,
+  ({ one }) => ({
+    organization: one(organizations, {
+      fields: [organizationMemberships.organizationId],
+      references: [organizations.id],
+    }),
+    user: one(users, {
+      fields: [organizationMemberships.userId],
+      references: [users.id],
+    }),
+  }),
+);
+
+export const organizationSubscriptionsRelations = relations(
+  organizationSubscriptions,
+  ({ one }) => ({
+    organization: one(organizations, {
+      fields: [organizationSubscriptions.organizationId],
+      references: [organizations.id],
+    }),
+  }),
+);
+
+export const supportTicketsRelations = relations(supportTickets, ({ one }) => ({
+  requester: one(users, {
+    fields: [supportTickets.requesterId],
+    references: [users.id],
+  }),
+  organization: one(organizations, {
+    fields: [supportTickets.organizationId],
+    references: [organizations.id],
+  }),
+}));
+
+export const usersRelations = relations(users, ({ many, one }) => ({
   projects: many(projects),
 
   publicationRequests: many(publicationRequests, {
@@ -450,9 +612,22 @@ export const usersRelations = relations(users, ({ many }) => ({
   }),
 
   reviews: many(reviews),
+  memberships: many(organizationMemberships),
+  createdOrganizations: many(organizations, { relationName: "organizationCreator" }),
+  subscriptionsAsOwner: many(organizationSubscriptions),
+  supportTickets: many(supportTickets),
+  organization: one(organizations, {
+    fields: [users.organizationId],
+    references: [organizations.id],
+    relationName: "primaryOrganization",
+  }),
 }));
 
 export const projectsRelations = relations(projects, ({ one, many }) => ({
+  organization: one(organizations, {
+    fields: [projects.organizationId],
+    references: [organizations.id],
+  }),
   student: one(users, {
     fields: [projects.studentId],
     references: [users.id],
@@ -580,6 +755,10 @@ export const meetingsRelations = relations(meetings, ({ one, many }) => ({
 export const publicationRequestsRelations = relations(
   publicationRequests,
   ({ one }) => ({
+    organization: one(organizations, {
+      fields: [publicationRequests.organizationId],
+      references: [organizations.id],
+    }),
     requester: one(users, {
       fields: [publicationRequests.requesterId],
       references: [users.id],

@@ -10,6 +10,8 @@ import { eq, desc } from "drizzle-orm";
 import { uploadToCloudinary } from "../utils/fileUpload.js";
 import z from "zod";
 import { errorResponse, getAuthUser, sanitizeString } from "../utils/helper.js";
+import { ensurePrimaryOrganization } from "../utils/organization.js";
+import { extractPublicationMetadata } from "../services/pdfExtraction.js";
 
 const publicationSchema = z.object({
   title: z.string().min(1, "Title is required"),
@@ -29,14 +31,32 @@ const publicationSchema = z.object({
 });
 
 // CREATE PUBLICATION REQUEST
+export const extractPublicationFromPdf = async (req: Request, res: Response) => {
+  const authUser = getAuthUser(req);
+  if (!authUser) return errorResponse(res, 401, "Unauthorized access");
+  const file = req.file;
+  if (!file || file.mimetype !== "application/pdf") return errorResponse(res, 400, "A PDF file is required");
+  if (file.size > 50 * 1024 * 1024) return errorResponse(res, 400, "File size must be less than 50MB");
+
+  try {
+    const metadata = await extractPublicationMetadata(file.buffer);
+    return res.status(200).json({ success: true, metadata });
+  } catch (error: any) {
+    console.error("extractPublicationFromPdf error", error);
+    return errorResponse(res, 422, error?.message || "Could not extract publication metadata from this PDF");
+  }
+};
+
 export const createPublicationRequest = async (req: Request, res: Response) => {
   const authUser = getAuthUser(req);
-  const userId = authUser.id;
-  const file = req.file;
 
   if (!authUser) {
     return errorResponse(res, 401, "Unauthorized access");
   }
+
+  const userId = authUser.id;
+  const file = req.file;
+  const organizationId = await ensurePrimaryOrganization(userId);
 
   if (!file) {
     return errorResponse(res, 400, "Research file required");
@@ -73,6 +93,7 @@ export const createPublicationRequest = async (req: Request, res: Response) => {
     const [publication] = await db
       .insert(publicationRequests)
       .values({
+        organizationId,
         requesterId: userId,
         title: parsed.title,
         abstract: parsed.abstract,
@@ -212,6 +233,7 @@ export const approvePublication = async (req: Request, res: Response) => {
       const [newProject] = (await tx
         .insert(projects)
         .values({
+          organizationId: publicationRequest.organizationId,
           title: publicationRequest.title,
           abstract: publicationRequest.abstract,
           fileUrl: publicationRequest.fileUrl,

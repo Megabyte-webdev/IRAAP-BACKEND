@@ -2,6 +2,7 @@ import { Router } from "express";
 
 import {
   createPublicationRequest,
+  extractPublicationFromPdf,
   getMyPublications,
   approvePublication,
   rejectPublication,
@@ -12,6 +13,15 @@ import { authenticate, authorize } from "../middleware/auth.js";
 import { upload } from "../middleware/upload.js";
 
 const router: Router = Router();
+
+// Extract metadata without storing the file
+router.post(
+  "/extract",
+  authenticate,
+  authorize(["STUDENT"]),
+  upload.single("file"),
+  extractPublicationFromPdf,
+);
 
 // User creates request
 router.post(

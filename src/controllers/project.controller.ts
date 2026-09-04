@@ -18,6 +18,7 @@ import {
   sanitizeString,
   verifyProjectOwnership,
 } from "../utils/helper.js";
+import { ensurePrimaryOrganization, userBelongsToOrganization } from "../utils/organization.js";
 
 const projectSchema = z.object({
   title: z.string().min(1, "Title is required"),
@@ -42,8 +43,18 @@ export const submitProject = async (req: Request, res: Response) => {
   }
 
   const studentId = authUser.id;
-  const supervisorId = authUser.supervisorId;
   const file = req.file;
+
+  const currentStudent = await db.query.users.findFirst({
+    where: eq(users.id, studentId),
+    columns: { id: true, supervisorId: true },
+  });
+
+  const supervisorId = currentStudent?.supervisorId ?? null;
+
+  if (!supervisorId) {
+    return errorResponse(res, 400, "A project must have an assigned supervisor before it can be submitted.");
+  }
 
   if (!file) {
     return errorResponse(res, 400, "No PDF file provided");
@@ -79,10 +90,19 @@ export const submitProject = async (req: Request, res: Response) => {
   }
 
   try {
+    const organizationId = await ensurePrimaryOrganization(studentId);
+    if (organizationId) {
+      const supervisorIsMember = await userBelongsToOrganization(supervisorId, organizationId, ["SUPERVISOR", "MANAGER"]);
+      if (!supervisorIsMember) {
+        return errorResponse(res, 400, "The assigned supervisor is not a member of your organization.");
+      }
+    }
+
     const result = await db.transaction(async (tx) => {
       const [project] = await (tx
         .insert(projects)
         .values({
+          organizationId,
           title: parsed.title,
           abstract: parsed.abstract,
           submissionYear: parsed.submissionYear,
@@ -177,8 +197,18 @@ export const updateProject = async (req: Request, res: Response) => {
 
   const projectId = Number(req.params.id);
   const studentId = authUser.id;
-  const supervisorId = authUser.supervisorId;
   const file = req.file;
+
+  const currentStudent = await db.query.users.findFirst({
+    where: eq(users.id, studentId),
+    columns: { id: true, supervisorId: true },
+  });
+
+  const supervisorId = currentStudent?.supervisorId ?? null;
+
+  if (!supervisorId) {
+    return errorResponse(res, 400, "A project must have an assigned supervisor before it can be submitted.");
+  }
 
   if (isNaN(projectId)) {
     return errorResponse(res, 400, "Invalid project ID");
