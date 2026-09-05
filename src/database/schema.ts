@@ -584,21 +584,44 @@ export const authOtpChallenges = pgTable(
   }),
 );
 
-export const refreshTokens = pgTable("refresh_tokens", {
-  id: serial("id").primaryKey(),
+export const refreshTokens = pgTable(
+  "refresh_tokens",
+  {
+    id: serial("id").primaryKey(),
 
-  userId: integer("user_id")
-    .notNull()
-    .references(() => users.id, {
-      onDelete: "cascade",
-    }),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id, {
+        onDelete: "cascade",
+      }),
 
-  token: text("token").notNull().unique(),
+    // Never store a usable refresh token in the database.
+    tokenHash: text("token_hash").notNull().unique(),
 
-  expiresAt: timestamp("expires_at").notNull(),
+    // Tokens in the same family represent one browser/device session.
+    familyId: varchar("family_id", { length: 64 }).notNull(),
 
-  createdAt: timestamp("created_at").defaultNow(),
-});
+    // Sliding inactivity expiration. Refreshed on every successful rotation.
+    expiresAt: timestamp("expires_at").notNull(),
+
+    // Hard maximum lifetime for the session; this never moves forward.
+    sessionExpiresAt: timestamp("session_expires_at").notNull(),
+
+    lastUsedAt: timestamp("last_used_at"),
+
+    // Rotation/reuse detection. Revoked rows are retained for a short period
+    // so a reused token can be identified and the session family revoked.
+    revokedAt: timestamp("revoked_at"),
+    replacedByTokenHash: text("replaced_by_token_hash"),
+
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => ({
+    familyIndex: index("refresh_tokens_family_idx").on(table.familyId),
+    userIndex: index("refresh_tokens_user_idx").on(table.userId),
+    expiresIndex: index("refresh_tokens_expires_idx").on(table.expiresAt),
+  }),
+);
 
 export const organizationsRelations = relations(
   organizations,

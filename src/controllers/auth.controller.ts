@@ -7,7 +7,7 @@ import {
   refreshTokens,
   users,
 } from "../database/schema.js";
-import { and, desc, eq, isNull } from "drizzle-orm";
+import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import { z } from "zod";
@@ -59,25 +59,48 @@ const getOrganizationAccess = async (userId: number) => {
   };
 };
 
+const REFRESH_IDLE_MS = 30 * 24 * 60 * 60 * 1000;
+const REFRESH_MAX_SESSION_MS = 90 * 24 * 60 * 60 * 1000;
+const REFRESH_COOKIE_NAME = "IRAAPRefreshToken";
+
+const hashRefreshToken = (value: string) =>
+  crypto.createHash("sha256").update(value).digest("hex");
+
+const getRefreshCookieOptions = (maxAge: number) => ({
+  httpOnly: true,
+  secure: process.env.NODE_ENV === "production",
+  sameSite: process.env.NODE_ENV === "production" ? ("none" as const) : ("lax" as const),
+  domain: process.env.COOKIE_DOMAIN || undefined,
+  path: "/",
+  maxAge,
+});
+
+const setRefreshCookie = (res: Response, token: string, maxAge: number) =>
+  res.cookie(REFRESH_COOKIE_NAME, token, getRefreshCookieOptions(maxAge));
+
 const issueSession = async (res: Response, user: any) => {
-  const accessToken = generateAccessToken(user);
-  const refreshToken = generateRefreshToken(user.id);
+  const now = Date.now();
+  const sessionExpiresAt = new Date(now + REFRESH_MAX_SESSION_MS);
+  const refreshExpiresAt = new Date(Math.min(now + REFRESH_IDLE_MS, sessionExpiresAt.getTime()));
+  const familyId = crypto.randomUUID().replace(/-/g, "");
+  const refreshToken = generateRefreshToken(user.id, sessionExpiresAt, familyId);
+
   await db.insert(refreshTokens).values({
     userId: user.id,
-    token: refreshToken,
-    expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+    tokenHash: hashRefreshToken(refreshToken),
+    familyId,
+    expiresAt: refreshExpiresAt,
+    sessionExpiresAt,
+    lastUsedAt: new Date(now),
   });
 
-  res.cookie("IRAAPRefreshToken", refreshToken, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
-    domain: process.env.COOKIE_DOMAIN || undefined,
-    path: "/",
-    maxAge: 30 * 24 * 60 * 60 * 1000,
-  });
+  setRefreshCookie(
+    res,
+    refreshToken,
+    Math.max(1000, refreshExpiresAt.getTime() - now),
+  );
 
-  return { accessToken };
+  return { accessToken: generateAccessToken(user) };
 };
 
 const createOtpChallenge = async ({
@@ -413,11 +436,16 @@ export const resendOtp = async (req: Request, res: Response) => {
 
 export const logout = async (req: Request, res: Response) => {
   try {
-    const token = req.cookies.IRAAPRefreshToken;
-    if (token)
-      await db.delete(refreshTokens).where(eq(refreshTokens.token, token));
+    const token = req.cookies?.[REFRESH_COOKIE_NAME];
+    if (token) {
+      const tokenHash = hashRefreshToken(token);
+      await db
+        .update(refreshTokens)
+        .set({ revokedAt: new Date() })
+        .where(eq(refreshTokens.tokenHash, tokenHash));
+    }
   } finally {
-    res.clearCookie("IRAAPRefreshToken", {
+    res.clearCookie(REFRESH_COOKIE_NAME, {
       path: "/",
       domain: process.env.COOKIE_DOMAIN || undefined,
     });
@@ -426,50 +454,182 @@ export const logout = async (req: Request, res: Response) => {
 };
 
 export const refreshToken = async (req: Request, res: Response) => {
-  try {
-    const token = req.cookies.IRAAPRefreshToken;
-    if (!token)
-      return res
-        .status(401)
-        .json({ success: false, message: "Refresh token missing" });
-
-    const stored = await db.query.refreshTokens.findFirst({
-      where: eq(refreshTokens.token, token),
+  const token = req.cookies?.[REFRESH_COOKIE_NAME];
+  if (!token) {
+    return res.status(401).json({
+      success: false,
+      message: "Refresh token missing",
+      code: "REFRESH_MISSING",
     });
-    if (!stored || stored.expiresAt.getTime() <= Date.now()) {
-      return res
-        .status(401)
-        .json({ success: false, message: "Refresh session expired" });
+  }
+
+  let decoded: any;
+  try {
+    decoded = jwt.verify(token, process.env.JWT_REFRESH_SECRET!);
+  } catch (error: any) {
+    console.warn("Refresh token cryptographic validation failed:", error?.message || error);
+    res.clearCookie(REFRESH_COOKIE_NAME, {
+      path: "/",
+      domain: process.env.COOKIE_DOMAIN || undefined,
+    });
+    return res.status(401).json({
+      success: false,
+      message: "Refresh session is invalid or expired",
+      code: error?.name === "TokenExpiredError" ? "REFRESH_EXPIRED" : "REFRESH_INVALID",
+    });
+  }
+
+  if (!decoded?.id || !decoded?.familyId || typeof decoded.familyId !== "string") {
+    return res.status(401).json({
+      success: false,
+      message: "Refresh session is invalid",
+      code: "REFRESH_INVALID",
+    });
+  }
+
+  const tokenHash = hashRefreshToken(token);
+  const now = new Date();
+
+  try {
+    // Advisory-lock the session family so two simultaneous refresh requests
+    // cannot both rotate the same token at the same time.
+    const result = await db.transaction(async (tx) => {
+      await tx.execute(
+        sql`SELECT pg_advisory_xact_lock(hashtextextended(${decoded.familyId}, 0))`,
+      );
+
+      const stored = await tx.query.refreshTokens.findFirst({
+        where: eq(refreshTokens.tokenHash, tokenHash),
+      });
+
+      if (!stored) {
+        return { ok: false as const, status: 401, code: "REFRESH_INVALID", message: "Refresh session is invalid" };
+      }
+
+      if (stored.familyId !== decoded.familyId) {
+        return { ok: false as const, status: 401, code: "REFRESH_INVALID", message: "Refresh session is invalid" };
+      }
+
+      if (stored.revokedAt) {
+        // A revoked refresh token being presented again is a strong signal of
+        // token theft/reuse. Revoke every token in the family immediately.
+        await tx
+          .update(refreshTokens)
+          .set({ revokedAt: now })
+          .where(eq(refreshTokens.familyId, stored.familyId));
+        return {
+          ok: false as const,
+          status: 401,
+          code: "REFRESH_REUSE_DETECTED",
+          message: "Refresh session has been revoked. Please sign in again.",
+        };
+      }
+
+      if (
+        stored.expiresAt.getTime() <= now.getTime() ||
+        stored.sessionExpiresAt.getTime() <= now.getTime()
+      ) {
+        await tx
+          .update(refreshTokens)
+          .set({ revokedAt: now })
+          .where(eq(refreshTokens.id, stored.id));
+        return {
+          ok: false as const,
+          status: 401,
+          code: "REFRESH_EXPIRED",
+          message: "Refresh session expired. Please sign in again.",
+        };
+      }
+
+      const user: any = await tx.query.users.findFirst({
+        where: eq(users.id, Number(decoded.id)),
+      });
+      if (!user) {
+        await tx
+          .update(refreshTokens)
+          .set({ revokedAt: now })
+          .where(eq(refreshTokens.familyId, stored.familyId));
+        return {
+          ok: false as const,
+          status: 401,
+          code: "REFRESH_USER_INVALID",
+          message: "Session is invalid",
+        };
+      }
+
+      const nextExpiresAt = new Date(
+        Math.min(
+          now.getTime() + REFRESH_IDLE_MS,
+          stored.sessionExpiresAt.getTime(),
+        ),
+      );
+      const nextRefreshToken = generateRefreshToken(
+        user.id,
+        stored.sessionExpiresAt,
+        stored.familyId,
+      );
+      const nextTokenHash = hashRefreshToken(nextRefreshToken);
+
+      await tx
+        .update(refreshTokens)
+        .set({
+          revokedAt: now,
+          replacedByTokenHash: nextTokenHash,
+          lastUsedAt: now,
+        })
+        .where(eq(refreshTokens.id, stored.id));
+
+      await tx.insert(refreshTokens).values({
+        userId: user.id,
+        tokenHash: nextTokenHash,
+        familyId: stored.familyId,
+        expiresAt: nextExpiresAt,
+        sessionExpiresAt: stored.sessionExpiresAt,
+        lastUsedAt: now,
+      });
+
+      return {
+        ok: true as const,
+        accessToken: generateAccessToken(user),
+        refreshToken: nextRefreshToken,
+        cookieMaxAge: nextExpiresAt.getTime() - now.getTime(),
+        user,
+      };
+    });
+
+    if (!result.ok) {
+      res.clearCookie(REFRESH_COOKIE_NAME, {
+        path: "/",
+        domain: process.env.COOKIE_DOMAIN || undefined,
+      });
+      return res.status(result.status).json({
+        success: false,
+        message: result.message,
+        code: result.code,
+      });
     }
 
-    const decoded: any = jwt.verify(token, process.env.JWT_REFRESH_SECRET!);
-    const user: any = await db.query.users.findFirst({
-      where: eq(users.id, decoded.id),
-    });
-    if (!user)
-      return res
-        .status(401)
-        .json({ success: false, message: "Session is invalid" });
+    setRefreshCookie(res, result.refreshToken, result.cookieMaxAge);
+    const organizationAccess = await getOrganizationAccess(result.user.id);
 
-    await db.delete(refreshTokens).where(eq(refreshTokens.token, token));
-    const organizationAccess = await getOrganizationAccess(user.id);
-    const { accessToken } = await issueSession(res, user);
     return res.json({
       success: true,
-      token: accessToken,
+      token: result.accessToken,
       user: {
-        id: user.id,
-        fullName: user.fullName,
-        email: user.email,
-        role: user.role,
+        id: result.user.id,
+        fullName: result.user.fullName,
+        email: result.user.email,
+        role: result.user.role,
         organizationId: organizationAccess.organizationId,
         organizationRole: organizationAccess.organizationRole,
       },
     });
   } catch (error) {
     console.error("Refresh token error:", error);
-    return res
-      .status(401)
-      .json({ success: false, message: "Session is invalid or expired" });
+    return res.status(500).json({
+      success: false,
+      message: "Unable to refresh your session right now. Please try again.",
+      code: "REFRESH_SERVER_ERROR",
+    });
   }
 };

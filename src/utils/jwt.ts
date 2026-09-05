@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import jwt from "jsonwebtoken";
 
 export const generateAccessToken = (user: any) => {
@@ -19,14 +20,22 @@ export const generateAccessToken = (user: any) => {
   );
 };
 
-export const generateRefreshToken = (userId: number) => {
+export const generateRefreshToken = (
+  userId: number,
+  expiresAt: Date,
+  familyId: string,
+) => {
+  const expiresInSeconds = Math.max(1, Math.floor((expiresAt.getTime() - Date.now()) / 1000));
+
   return jwt.sign(
     {
       id: userId,
+      familyId,
     },
     process.env.JWT_REFRESH_SECRET!,
     {
-      expiresIn: "30d",
+      expiresIn: expiresInSeconds,
+      jwtid: crypto.randomUUID(),
     },
   );
 };

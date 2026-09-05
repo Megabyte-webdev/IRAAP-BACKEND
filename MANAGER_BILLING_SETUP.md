@@ -81,3 +81,9 @@ The default trial is 14 days. During the trial, the backend allows the organizat
 - 1 manager
 
 Change the limits with environment variables. These are server-enforced, not UI-only.
+
+## Redis production requirement
+
+The rate limiter creates one RedisStore per limiter with unique prefixes. Do not refactor these stores into one shared Store instance.
+
+For a Redis instance holding security-sensitive state, prefer `maxmemory-policy noeviction` with adequate memory headroom. If Redis is shared with cache workloads, use a dedicated Redis instance/database for security-sensitive keys.
