@@ -65,24 +65,88 @@ export const getManagerDashboard = async (req: Request, res: Response) => {
       pendingPublications,
       downloads,
     ] = await Promise.all([
-      db.select({ count: sql<number>`count(*)::int` }).from(organizationMemberships).where(eq(organizationMemberships.organizationId, ctx.organizationId)),
-      db.select({ count: sql<number>`count(*)::int` }).from(organizationMemberships).where(and(eq(organizationMemberships.organizationId, ctx.organizationId), eq(organizationMemberships.role, "MANAGER"))),
-      db.select({ count: sql<number>`count(*)::int` }).from(organizationMemberships).where(and(eq(organizationMemberships.organizationId, ctx.organizationId), eq(organizationMemberships.role, "STUDENT"))),
-      db.select({ count: sql<number>`count(*)::int` }).from(organizationMemberships).where(and(eq(organizationMemberships.organizationId, ctx.organizationId), eq(organizationMemberships.role, "SUPERVISOR"))),
-      db.select({ count: sql<number>`count(*)::int` }).from(organizationMemberships).where(and(eq(organizationMemberships.organizationId, ctx.organizationId), eq(organizationMemberships.role, "RESEARCHER"))),
-      db.select({ count: sql<number>`count(*)::int` }).from(projects).where(eq(projects.organizationId, ctx.organizationId)),
-      db.select({ count: sql<number>`count(*)::int` }).from(projects).where(and(eq(projects.organizationId, ctx.organizationId), eq(projects.status, "APPROVED"))),
-      db.select({ count: sql<number>`count(*)::int` }).from(publicationRequests).where(and(eq(publicationRequests.organizationId, ctx.organizationId), eq(publicationRequests.status, "PENDING"))),
-      db.select({ count: sql<number>`count(*)::int` }).from(projects).where(eq(projects.organizationId, ctx.organizationId)),
+      db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(organizationMemberships)
+        .where(eq(organizationMemberships.organizationId, ctx.organizationId)),
+      db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(organizationMemberships)
+        .where(
+          and(
+            eq(organizationMemberships.organizationId, ctx.organizationId),
+            eq(organizationMemberships.role, "MANAGER"),
+          ),
+        ),
+      db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(organizationMemberships)
+        .where(
+          and(
+            eq(organizationMemberships.organizationId, ctx.organizationId),
+            eq(organizationMemberships.role, "STUDENT"),
+          ),
+        ),
+      db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(organizationMemberships)
+        .where(
+          and(
+            eq(organizationMemberships.organizationId, ctx.organizationId),
+            eq(organizationMemberships.role, "SUPERVISOR"),
+          ),
+        ),
+      db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(organizationMemberships)
+        .where(
+          and(
+            eq(organizationMemberships.organizationId, ctx.organizationId),
+            eq(organizationMemberships.role, "RESEARCHER"),
+          ),
+        ),
+      db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(projects)
+        .where(eq(projects.organizationId, ctx.organizationId)),
+      db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(projects)
+        .where(
+          and(
+            eq(projects.organizationId, ctx.organizationId),
+            eq(projects.status, "APPROVED"),
+          ),
+        ),
+      db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(publicationRequests)
+        .where(
+          and(
+            eq(publicationRequests.organizationId, ctx.organizationId),
+            eq(publicationRequests.status, "PENDING"),
+          ),
+        ),
+      db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(projects)
+        .where(eq(projects.organizationId, ctx.organizationId)),
     ]);
     const subscription = await getSubscription(ctx.organizationId);
-    const effectiveStatus = subscription?.status === "TRIAL" && subscription.endsAt && subscription.endsAt.getTime() <= Date.now()
-      ? "EXPIRED"
-      : subscription?.status ?? "EXPIRED";
+    const effectiveStatus =
+      subscription?.status === "TRIAL" &&
+      subscription.endsAt &&
+      subscription.endsAt.getTime() <= Date.now()
+        ? "EXPIRED"
+        : (subscription?.status ?? "EXPIRED");
 
     return res.json({
-      organization: await db.query.organizations.findFirst({ where: eq(organizations.id, ctx.organizationId) }),
-      subscription: subscription ? { ...subscription, status: effectiveStatus } : null,
+      organization: await db.query.organizations.findFirst({
+        where: eq(organizations.id, ctx.organizationId),
+      }),
+      subscription: subscription
+        ? { ...subscription, status: effectiveStatus }
+        : null,
       stats: {
         members: members[0]?.count ?? 0,
         managers: managers[0]?.count ?? 0,
@@ -114,7 +178,15 @@ export const getManagerMembers = async (req: Request, res: Response) => {
       orderBy: [desc(organizationMemberships.createdAt)],
       with: {
         user: {
-          columns: { id: true, fullName: true, email: true, role: true, department: true, matricNumber: true, emailVerifiedAt: true },
+          columns: {
+            id: true,
+            fullName: true,
+            email: true,
+            role: true,
+            department: true,
+            matricNumber: true,
+            emailVerifiedAt: true,
+          },
         },
       },
     });
@@ -125,7 +197,10 @@ export const getManagerMembers = async (req: Request, res: Response) => {
   }
 };
 
-export const addOrganizationMemberByManager = async (req: Request, res: Response) => {
+export const addOrganizationMemberByManager = async (
+  req: Request,
+  res: Response,
+) => {
   const ctx = getContext(req);
   const schema = z.object({
     fullName: z.string().trim().min(2).max(255),
@@ -134,62 +209,108 @@ export const addOrganizationMemberByManager = async (req: Request, res: Response
     department: z.string().trim().max(255).optional(),
   });
   const parsed = schema.safeParse(req.body);
-  if (!parsed.success) return errorResponse(res, 400, parsed.error.issues[0]?.message || "Invalid member data");
+  if (!parsed.success)
+    return errorResponse(
+      res,
+      400,
+      parsed.error.issues[0]?.message || "Invalid member data",
+    );
   if (!(await requireTrialQuota(req, res, "MEMBERS"))) return;
 
   try {
-    let user = await db.query.users.findFirst({ where: eq(users.email, parsed.data.email) });
+    let user = await db.query.users.findFirst({
+      where: eq(users.email, parsed.data.email),
+    });
 
     if (user) {
-      if (user.role === "ADMIN") return errorResponse(res, 400, "Administrator accounts cannot be organization members.");
+      if (user.role === "ADMIN")
+        return errorResponse(
+          res,
+          400,
+          "Administrator accounts cannot be organization members.",
+        );
       if (user.organizationId && user.organizationId !== ctx.organizationId) {
-        return errorResponse(res, 409, "That user already belongs to another organization.");
+        return errorResponse(
+          res,
+          409,
+          "That user already belongs to another organization.",
+        );
       }
       const otherMembership = await db.query.organizationMemberships.findFirst({
-        where: and(eq(organizationMemberships.userId, user.id), sql`${organizationMemberships.organizationId} <> ${ctx.organizationId}`),
+        where: and(
+          eq(organizationMemberships.userId, user.id),
+          sql`${organizationMemberships.organizationId} <> ${ctx.organizationId}`,
+        ),
       });
-      if (otherMembership) return errorResponse(res, 409, "That user already belongs to another organization.");
+      if (otherMembership)
+        return errorResponse(
+          res,
+          409,
+          "That user already belongs to another organization.",
+        );
 
       const existing = await db.query.organizationMemberships.findFirst({
-        where: and(eq(organizationMemberships.organizationId, ctx.organizationId), eq(organizationMemberships.userId, user.id)),
+        where: and(
+          eq(organizationMemberships.organizationId, ctx.organizationId),
+          eq(organizationMemberships.userId, user.id),
+        ),
       });
-      if (existing) return errorResponse(res, 409, "That user is already a member of this organization.");
+      if (existing)
+        return errorResponse(
+          res,
+          409,
+          "That user is already a member of this organization.",
+        );
     } else {
       const temporaryPassword = `${crypto.randomBytes(10).toString("base64url")}!A9`;
       const password = await bcrypt.hash(temporaryPassword, 12);
-      const [created] = await db.insert(users).values({
-        fullName: sanitizeString(parsed.data.fullName),
-        email: parsed.data.email,
-        password,
-        role: parsed.data.role === "SUPERVISOR" ? "SUPERVISOR" : "STUDENT",
-        organizationId: ctx.organizationId,
-        department: parsed.data.department || null,
-        updatedAt: new Date(),
-      }).returning();
+      const [created] = (await db
+        .insert(users)
+        .values({
+          fullName: sanitizeString(parsed.data.fullName),
+          email: parsed.data.email,
+          password,
+          role: parsed.data.role === "SUPERVISOR" ? "SUPERVISOR" : "STUDENT",
+          organizationId: ctx.organizationId,
+          department: parsed.data.department || null,
+          updatedAt: new Date(),
+        })
+        .returning()) as any;
       user = created;
 
       eventBus.emit(Events.USER_REGISTERED, {
         fullName: created.fullName,
         email: created.email,
         password: temporaryPassword,
-        role: parsed.data.role === "SUPERVISOR" ? "Supervisor" : parsed.data.role === "RESEARCHER" ? "Researcher" : "Student",
+        role:
+          parsed.data.role === "SUPERVISOR"
+            ? "Supervisor"
+            : parsed.data.role === "RESEARCHER"
+              ? "Researcher"
+              : "Student",
         senderType: "organization-onboarding",
       });
     }
 
-    const [membership] = await db.insert(organizationMemberships).values({
-      organizationId: ctx.organizationId,
-      userId: user.id,
-      role: parsed.data.role,
-      department: parsed.data.department || null,
-      updatedAt: new Date(),
-    }).returning();
+    const [membership] = await db
+      .insert(organizationMemberships)
+      .values({
+        organizationId: ctx.organizationId,
+        userId: user.id,
+        role: parsed.data.role,
+        department: parsed.data.department || null,
+        updatedAt: new Date(),
+      })
+      .returning();
 
-    await db.update(users).set({
-      organizationId: ctx.organizationId,
-      department: parsed.data.department || user.department || null,
-      updatedAt: new Date(),
-    }).where(eq(users.id, user.id));
+    await db
+      .update(users)
+      .set({
+        organizationId: ctx.organizationId,
+        department: parsed.data.department || user.department || null,
+        updatedAt: new Date(),
+      })
+      .where(eq(users.id, user.id));
 
     return res.status(201).json({ membership });
   } catch (error) {
@@ -198,41 +319,80 @@ export const addOrganizationMemberByManager = async (req: Request, res: Response
   }
 };
 
-export const createOrganizationManager = async (req: Request, res: Response) => {
+export const createOrganizationManager = async (
+  req: Request,
+  res: Response,
+) => {
   const ctx = getContext(req);
   const parsed = createManagerSchema.safeParse(req.body);
-  if (!parsed.success) return errorResponse(res, 400, parsed.error.issues[0]?.message || "Invalid manager data");
+  if (!parsed.success)
+    return errorResponse(
+      res,
+      400,
+      parsed.error.issues[0]?.message || "Invalid manager data",
+    );
   if (!(await requireTrialQuota(req, res, "MANAGERS"))) return;
 
   try {
     const email = parsed.data.email;
-    let user = await db.query.users.findFirst({ where: eq(users.email, email) });
+    let user = await db.query.users.findFirst({
+      where: eq(users.email, email),
+    });
 
     if (user) {
-      if (user.role === "ADMIN") return errorResponse(res, 400, "Administrator accounts cannot be organization managers.");
+      if (user.role === "ADMIN")
+        return errorResponse(
+          res,
+          400,
+          "Administrator accounts cannot be organization managers.",
+        );
       if (user.organizationId && user.organizationId !== ctx.organizationId) {
-        return errorResponse(res, 409, "That user already belongs to another organization.");
+        return errorResponse(
+          res,
+          409,
+          "That user already belongs to another organization.",
+        );
       }
       const otherMembership = await db.query.organizationMemberships.findFirst({
-        where: and(eq(organizationMemberships.userId, user.id), sql`${organizationMemberships.organizationId} <> ${ctx.organizationId}`),
+        where: and(
+          eq(organizationMemberships.userId, user.id),
+          sql`${organizationMemberships.organizationId} <> ${ctx.organizationId}`,
+        ),
       });
-      if (otherMembership) return errorResponse(res, 409, "That user already belongs to another organization.");
+      if (otherMembership)
+        return errorResponse(
+          res,
+          409,
+          "That user already belongs to another organization.",
+        );
 
-      const existingMembership = await db.query.organizationMemberships.findFirst({
-        where: and(eq(organizationMemberships.organizationId, ctx.organizationId), eq(organizationMemberships.userId, user.id)),
-      });
-      if (existingMembership) return errorResponse(res, 409, "That user is already a member of this organization.");
+      const existingMembership =
+        await db.query.organizationMemberships.findFirst({
+          where: and(
+            eq(organizationMemberships.organizationId, ctx.organizationId),
+            eq(organizationMemberships.userId, user.id),
+          ),
+        });
+      if (existingMembership)
+        return errorResponse(
+          res,
+          409,
+          "That user is already a member of this organization.",
+        );
     } else {
       const temporaryPassword = `${crypto.randomBytes(10).toString("base64url")}!A9`;
       const password = await bcrypt.hash(temporaryPassword, 12);
-      const [created] = await db.insert(users).values({
-        fullName: sanitizeString(parsed.data.fullName),
-        email,
-        password,
-        role: "STUDENT",
-        organizationId: ctx.organizationId,
-        updatedAt: new Date(),
-      }).returning();
+      const [created] = (await db
+        .insert(users)
+        .values({
+          fullName: sanitizeString(parsed.data.fullName),
+          email,
+          password,
+          role: "STUDENT",
+          organizationId: ctx.organizationId,
+          updatedAt: new Date(),
+        })
+        .returning()) as any;
       user = created;
       eventBus.emit(Events.USER_REGISTERED, {
         fullName: created.fullName,
@@ -244,18 +404,24 @@ export const createOrganizationManager = async (req: Request, res: Response) => 
     }
 
     const [membership] = await db.transaction(async (tx) => {
-      const [m] = await tx.insert(organizationMemberships).values({
-        organizationId: ctx.organizationId,
-        userId: user!.id,
-        role: "MANAGER",
-        department: parsed.data.department || null,
-        updatedAt: new Date(),
-      }).returning();
+      const [m] = await tx
+        .insert(organizationMemberships)
+        .values({
+          organizationId: ctx.organizationId,
+          userId: user!.id,
+          role: "MANAGER",
+          department: parsed.data.department || null,
+          updatedAt: new Date(),
+        })
+        .returning();
 
-      await tx.update(users).set({
-        organizationId: ctx.organizationId,
-        updatedAt: new Date(),
-      }).where(eq(users.id, user!.id));
+      await tx
+        .update(users)
+        .set({
+          organizationId: ctx.organizationId,
+          updatedAt: new Date(),
+        })
+        .where(eq(users.id, user!.id));
 
       return [m] as const;
     });
@@ -267,20 +433,35 @@ export const createOrganizationManager = async (req: Request, res: Response) => 
   }
 };
 
-export const updateOrganizationMemberRole = async (req: Request, res: Response) => {
+export const updateOrganizationMemberRole = async (
+  req: Request,
+  res: Response,
+) => {
   const ctx = getContext(req);
   const userId = Number(req.params.userId);
   const parsed = roleSchema.safeParse(req.body);
-  if (!userId || !parsed.success) return errorResponse(res, 400, "Invalid role update");
-  if (userId === Number((req as any).user?.id) && parsed.data.role !== "MANAGER") {
-    return errorResponse(res, 400, "You cannot remove your own manager access.");
+  if (!userId || !parsed.success)
+    return errorResponse(res, 400, "Invalid role update");
+  if (
+    userId === Number((req as any).user?.id) &&
+    parsed.data.role !== "MANAGER"
+  ) {
+    return errorResponse(
+      res,
+      400,
+      "You cannot remove your own manager access.",
+    );
   }
 
   try {
     const membership = await db.query.organizationMemberships.findFirst({
-      where: and(eq(organizationMemberships.organizationId, ctx.organizationId), eq(organizationMemberships.userId, userId)),
+      where: and(
+        eq(organizationMemberships.organizationId, ctx.organizationId),
+        eq(organizationMemberships.userId, userId),
+      ),
     });
-    if (!membership) return errorResponse(res, 404, "Organization member not found");
+    if (!membership)
+      return errorResponse(res, 404, "Organization member not found");
 
     const targetUser = await db.query.users.findFirst({
       where: eq(users.id, userId),
@@ -288,23 +469,34 @@ export const updateOrganizationMemberRole = async (req: Request, res: Response) 
     });
     if (!targetUser) return errorResponse(res, 404, "User not found");
     if (targetUser.role === "ADMIN" && parsed.data.role === "MANAGER") {
-      return errorResponse(res, 400, "Administrator accounts cannot be organization managers.");
+      return errorResponse(
+        res,
+        400,
+        "Administrator accounts cannot be organization managers.",
+      );
     }
 
     if (membership.role !== "MANAGER" && parsed.data.role === "MANAGER") {
       if (!(await requireTrialQuota(req, res, "MANAGERS"))) return;
     }
 
-    const [updated] = await db.update(organizationMemberships).set({
-      role: parsed.data.role,
-      department: parsed.data.department || null,
-      updatedAt: new Date(),
-    }).where(eq(organizationMemberships.id, membership.id)).returning();
+    const [updated] = await db
+      .update(organizationMemberships)
+      .set({
+        role: parsed.data.role,
+        department: parsed.data.department || null,
+        updatedAt: new Date(),
+      })
+      .where(eq(organizationMemberships.id, membership.id))
+      .returning();
 
-    await db.update(users).set({
-      organizationId: ctx.organizationId,
-      updatedAt: new Date(),
-    }).where(eq(users.id, userId));
+    await db
+      .update(users)
+      .set({
+        organizationId: ctx.organizationId,
+        updatedAt: new Date(),
+      })
+      .where(eq(users.id, userId));
 
     return res.json({ membership: updated });
   } catch (error) {
@@ -313,22 +505,44 @@ export const updateOrganizationMemberRole = async (req: Request, res: Response) 
   }
 };
 
-export const removeOrganizationMemberByManager = async (req: Request, res: Response) => {
+export const removeOrganizationMemberByManager = async (
+  req: Request,
+  res: Response,
+) => {
   const ctx = getContext(req);
   const userId = Number(req.params.userId);
   const requesterId = Number((req as any).user?.id);
   if (!userId) return errorResponse(res, 400, "Invalid user id");
-  if (userId === requesterId) return errorResponse(res, 400, "You cannot remove your own organization membership.");
+  if (userId === requesterId)
+    return errorResponse(
+      res,
+      400,
+      "You cannot remove your own organization membership.",
+    );
 
   try {
     const target = await db.query.organizationMemberships.findFirst({
-      where: and(eq(organizationMemberships.organizationId, ctx.organizationId), eq(organizationMemberships.userId, userId)),
+      where: and(
+        eq(organizationMemberships.organizationId, ctx.organizationId),
+        eq(organizationMemberships.userId, userId),
+      ),
     });
-    if (!target) return errorResponse(res, 404, "Organization member not found");
+    if (!target)
+      return errorResponse(res, 404, "Organization member not found");
 
-    await db.delete(organizationMemberships).where(eq(organizationMemberships.id, target.id));
-    const remaining = await db.query.organizationMemberships.findFirst({ where: eq(organizationMemberships.userId, userId) });
-    await db.update(users).set({ organizationId: remaining?.organizationId ?? null, updatedAt: new Date() }).where(eq(users.id, userId));
+    await db
+      .delete(organizationMemberships)
+      .where(eq(organizationMemberships.id, target.id));
+    const remaining = await db.query.organizationMemberships.findFirst({
+      where: eq(organizationMemberships.userId, userId),
+    });
+    await db
+      .update(users)
+      .set({
+        organizationId: remaining?.organizationId ?? null,
+        updatedAt: new Date(),
+      })
+      .where(eq(users.id, userId));
 
     return res.json({ success: true });
   } catch (error) {
@@ -337,10 +551,14 @@ export const removeOrganizationMemberByManager = async (req: Request, res: Respo
   }
 };
 
-export const initializeOrganizationCheckout = async (req: Request, res: Response) => {
+export const initializeOrganizationCheckout = async (
+  req: Request,
+  res: Response,
+) => {
   const ctx = getContext(req);
   const parsed = checkoutSchema.safeParse(req.body);
-  if (!parsed.success) return errorResponse(res, 400, "Invalid subscription plan");
+  if (!parsed.success)
+    return errorResponse(res, 400, "Invalid subscription plan");
 
   const secret = process.env.PAYSTACK_SECRET_KEY;
   const callbackUrl = process.env.PAYSTACK_CALLBACK_URL;
@@ -348,7 +566,11 @@ export const initializeOrganizationCheckout = async (req: Request, res: Response
   const amount = PLAN_AMOUNTS[parsed.data.planCode];
 
   if (!secret || !callbackUrl || !planCode || !amount) {
-    return errorResponse(res, 503, "Billing is not configured. Set the Paystack environment variables before enabling paid plans.");
+    return errorResponse(
+      res,
+      503,
+      "Billing is not configured. Set the Paystack environment variables before enabling paid plans.",
+    );
   }
 
   try {
@@ -359,26 +581,29 @@ export const initializeOrganizationCheckout = async (req: Request, res: Response
     if (!manager) return errorResponse(res, 401, "Manager account not found");
 
     const reference = `iraap_${ctx.organizationId}_${Date.now()}_${crypto.randomBytes(5).toString("hex")}`;
-    const response = await fetch("https://api.paystack.co/transaction/initialize", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${secret}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        email: manager.email,
-        amount: String(amount),
-        plan: planCode,
-        callback_url: callbackUrl,
-        reference,
-        currency: process.env.BILLING_CURRENCY || "NGN",
-        metadata: {
-          organizationId: ctx.organizationId,
-          planCode: parsed.data.planCode,
-          initiatedBy: Number((req as any).user.id),
+    const response = await fetch(
+      "https://api.paystack.co/transaction/initialize",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${secret}`,
+          "Content-Type": "application/json",
         },
-      }),
-    });
+        body: JSON.stringify({
+          email: manager.email,
+          amount: String(amount),
+          plan: planCode,
+          callback_url: callbackUrl,
+          reference,
+          currency: process.env.BILLING_CURRENCY || "NGN",
+          metadata: {
+            organizationId: ctx.organizationId,
+            planCode: parsed.data.planCode,
+            initiatedBy: Number((req as any).user.id),
+          },
+        }),
+      },
+    );
     const data: any = await response.json();
     if (!response.ok || !data.status) {
       console.error("Paystack initialize failed", data);
@@ -406,18 +631,28 @@ export const initializeOrganizationCheckout = async (req: Request, res: Response
   }
 };
 
-export const verifyOrganizationCheckout = async (req: Request, res: Response) => {
+export const verifyOrganizationCheckout = async (
+  req: Request,
+  res: Response,
+) => {
   const ctx = getContext(req);
   const reference = String(req.params.reference || "");
-  if (!/^[A-Za-z0-9_.=-]{10,120}$/.test(reference)) return errorResponse(res, 400, "Invalid payment reference");
+  if (!/^[A-Za-z0-9_.=-]{10,120}$/.test(reference))
+    return errorResponse(res, 400, "Invalid payment reference");
 
   try {
-    const tx = await db.query.billingTransactions.findFirst({ where: eq(billingTransactions.reference, reference) });
-    if (!tx || tx.organizationId !== ctx.organizationId) return errorResponse(res, 404, "Payment not found");
-
-    const response = await fetch(`https://api.paystack.co/transaction/verify/${encodeURIComponent(reference)}`, {
-      headers: { Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}` },
+    const tx = await db.query.billingTransactions.findFirst({
+      where: eq(billingTransactions.reference, reference),
     });
+    if (!tx || tx.organizationId !== ctx.organizationId)
+      return errorResponse(res, 404, "Payment not found");
+
+    const response = await fetch(
+      `https://api.paystack.co/transaction/verify/${encodeURIComponent(reference)}`,
+      {
+        headers: { Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}` },
+      },
+    );
     const data: any = await response.json();
     if (!response.ok || !data.status || data.data?.status !== "success") {
       return res.json({ paid: false, status: data.data?.status ?? "pending" });
@@ -462,14 +697,21 @@ export const getOrganizationBilling = async (req: Request, res: Response) => {
 export const paystackWebhook = async (req: Request, res: Response) => {
   const signature = req.headers["x-paystack-signature"];
   const secret = process.env.PAYSTACK_SECRET_KEY;
-  if (!secret || typeof signature !== "string") return res.status(401).json({ message: "Invalid webhook signature" });
+  if (!secret || typeof signature !== "string")
+    return res.status(401).json({ message: "Invalid webhook signature" });
 
   const rawBody = (req as any).rawBody as Buffer | undefined;
   const bodyBuffer = rawBody ?? Buffer.from(JSON.stringify(req.body));
-  const expected = crypto.createHmac("sha512", secret).update(bodyBuffer).digest("hex");
+  const expected = crypto
+    .createHmac("sha512", secret)
+    .update(bodyBuffer)
+    .digest("hex");
   const expectedBuffer = Buffer.from(expected);
   const signatureBuffer = Buffer.from(signature);
-  if (expectedBuffer.length !== signatureBuffer.length || !crypto.timingSafeEqual(expectedBuffer, signatureBuffer)) {
+  if (
+    expectedBuffer.length !== signatureBuffer.length ||
+    !crypto.timingSafeEqual(expectedBuffer, signatureBuffer)
+  ) {
     return res.status(401).json({ message: "Invalid webhook signature" });
   }
 
@@ -478,19 +720,37 @@ export const paystackWebhook = async (req: Request, res: Response) => {
     const reference = req.body?.data?.reference;
     if (event === "charge.success" && reference) {
       await fulfillSuccessfulPayment(reference, req.body.data);
-    } else if (event === "invoice.payment_failed" && req.body?.data?.subscription_code) {
+    } else if (
+      event === "invoice.payment_failed" &&
+      req.body?.data?.subscription_code
+    ) {
       const sub = await db.query.organizationSubscriptions.findFirst({
-        where: eq(organizationSubscriptions.externalSubscriptionId, req.body.data.subscription_code),
+        where: eq(
+          organizationSubscriptions.externalSubscriptionId,
+          req.body.data.subscription_code,
+        ),
       });
       if (sub) {
-        await db.update(organizationSubscriptions).set({ status: "PAST_DUE", updatedAt: new Date() }).where(eq(organizationSubscriptions.id, sub.id));
+        await db
+          .update(organizationSubscriptions)
+          .set({ status: "PAST_DUE", updatedAt: new Date() })
+          .where(eq(organizationSubscriptions.id, sub.id));
       }
-    } else if (event === "subscription.disable" && req.body?.data?.subscription_code) {
+    } else if (
+      event === "subscription.disable" &&
+      req.body?.data?.subscription_code
+    ) {
       const sub = await db.query.organizationSubscriptions.findFirst({
-        where: eq(organizationSubscriptions.externalSubscriptionId, req.body.data.subscription_code),
+        where: eq(
+          organizationSubscriptions.externalSubscriptionId,
+          req.body.data.subscription_code,
+        ),
       });
       if (sub) {
-        await db.update(organizationSubscriptions).set({ status: "CANCELLED", updatedAt: new Date() }).where(eq(organizationSubscriptions.id, sub.id));
+        await db
+          .update(organizationSubscriptions)
+          .set({ status: "CANCELLED", updatedAt: new Date() })
+          .where(eq(organizationSubscriptions.id, sub.id));
       }
     }
 
@@ -502,7 +762,9 @@ export const paystackWebhook = async (req: Request, res: Response) => {
 };
 
 async function fulfillSuccessfulPayment(reference: string, data: any) {
-  const tx = await db.query.billingTransactions.findFirst({ where: eq(billingTransactions.reference, reference) });
+  const tx = await db.query.billingTransactions.findFirst({
+    where: eq(billingTransactions.reference, reference),
+  });
   if (!tx || tx.status === "PAID") return;
 
   const subscription = await db.query.organizationSubscriptions.findFirst({
@@ -511,14 +773,20 @@ async function fulfillSuccessfulPayment(reference: string, data: any) {
   });
 
   const now = new Date();
-  const endsAt = new Date(now.getTime() + Number(process.env.BILLING_TERM_DAYS || 30) * 24 * 60 * 60 * 1000);
+  const endsAt = new Date(
+    now.getTime() +
+      Number(process.env.BILLING_TERM_DAYS || 30) * 24 * 60 * 60 * 1000,
+  );
 
   await db.transaction(async (dbtx) => {
-    await db.update(billingTransactions).set({
-      status: "PAID",
-      paidAt: data?.paid_at ? new Date(data.paid_at) : now,
-      updatedAt: now,
-    }).where(eq(billingTransactions.id, tx.id));
+    await db
+      .update(billingTransactions)
+      .set({
+        status: "PAID",
+        paidAt: data?.paid_at ? new Date(data.paid_at) : now,
+        updatedAt: now,
+      })
+      .where(eq(billingTransactions.id, tx.id));
 
     const subscriptionPayload = {
       organizationId: tx.organizationId,
@@ -532,7 +800,10 @@ async function fulfillSuccessfulPayment(reference: string, data: any) {
     };
 
     if (subscription) {
-      await dbtx.update(organizationSubscriptions).set(subscriptionPayload).where(eq(organizationSubscriptions.id, subscription.id));
+      await dbtx
+        .update(organizationSubscriptions)
+        .set(subscriptionPayload)
+        .where(eq(organizationSubscriptions.id, subscription.id));
     } else {
       await dbtx.insert(organizationSubscriptions).values(subscriptionPayload);
     }
