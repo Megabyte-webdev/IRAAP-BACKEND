@@ -22,16 +22,25 @@ import { slugifyOrganization } from "../utils/organization.js";
 import { eventBus } from "../events/index.js";
 import { Events } from "../utils/email/email.types.js";
 
-const organizationSchema = z.object({
-  name: z.string().min(2).max(255),
-  code: z.string().max(80).optional(),
-  description: z.string().max(5000).optional(),
-  initialManagerName: z.union([z.string().trim().min(2).max(255), z.literal("")]).optional().transform((value) => value || undefined),
-  initialManagerEmail: z.union([z.string().trim().toLowerCase().email(), z.literal("")]).optional().transform((value) => value || undefined),
-}).refine(
-  (value) => Boolean(value.initialManagerName) === Boolean(value.initialManagerEmail),
-  { message: "Initial manager name and email must be provided together." },
-);
+const organizationSchema = z
+  .object({
+    name: z.string().min(2).max(255),
+    code: z.string().max(80).optional(),
+    description: z.string().max(5000).optional(),
+    initialManagerName: z
+      .union([z.string().trim().min(2).max(255), z.literal("")])
+      .optional()
+      .transform((value) => value || undefined),
+    initialManagerEmail: z
+      .union([z.string().trim().toLowerCase().email(), z.literal("")])
+      .optional()
+      .transform((value) => value || undefined),
+  })
+  .refine(
+    (value) =>
+      Boolean(value.initialManagerName) === Boolean(value.initialManagerEmail),
+    { message: "Initial manager name and email must be provided together." },
+  );
 
 const memberSchema = z.object({
   userId: z.number().int().positive(),
@@ -118,7 +127,10 @@ export const createOrganization = async (req: Request, res: Response) => {
         planCode: "FREE",
         status: "TRIAL",
         startsAt: new Date(),
-        endsAt: new Date(Date.now() + Number(process.env.FREE_TRIAL_DAYS || 14) * 24 * 60 * 60 * 1000),
+        endsAt: new Date(
+          Date.now() +
+            Number(process.env.FREE_TRIAL_DAYS || 14) * 24 * 60 * 60 * 1000,
+        ),
       });
 
       if (parsed.data.initialManagerEmail && parsed.data.initialManagerName) {
@@ -128,29 +140,44 @@ export const createOrganization = async (req: Request, res: Response) => {
         });
 
         if (manager?.role === "ADMIN") {
-          throw new Error("An administrator cannot be assigned as an organization manager.");
+          throw new Error(
+            "An administrator cannot be assigned as an organization manager.",
+          );
         }
-        if (manager?.organizationId && manager.organizationId !== organization.id) {
+        if (
+          manager?.organizationId &&
+          manager.organizationId !== organization.id
+        ) {
           throw new Error("That user already belongs to another organization.");
         }
         if (manager) {
-          const otherMembership = await tx.query.organizationMemberships.findFirst({
-            where: and(eq(organizationMemberships.userId, manager.id), sql`${organizationMemberships.organizationId} <> ${organization.id}`),
-          });
-          if (otherMembership) throw new Error("That user already belongs to another organization.");
+          const otherMembership =
+            await tx.query.organizationMemberships.findFirst({
+              where: and(
+                eq(organizationMemberships.userId, manager.id),
+                sql`${organizationMemberships.organizationId} <> ${organization.id}`,
+              ),
+            });
+          if (otherMembership)
+            throw new Error(
+              "That user already belongs to another organization.",
+            );
         }
 
         if (!manager) {
           const temporaryPassword = `${crypto.randomBytes(10).toString("base64url")}!A9`;
           const password = await bcrypt.hash(temporaryPassword, 12);
-          [manager] = await tx.insert(users).values({
-            fullName: sanitizeString(parsed.data.initialManagerName),
-            email,
-            password,
-            role: "STUDENT",
-            organizationId: organization.id,
-            updatedAt: new Date(),
-          }).returning();
+          [manager] = (await tx
+            .insert(users)
+            .values({
+              fullName: sanitizeString(parsed.data.initialManagerName),
+              email,
+              password,
+              role: "STUDENT",
+              organizationId: organization.id,
+              updatedAt: new Date(),
+            })
+            .returning()) as any;
 
           eventBus.emit(Events.USER_REGISTERED, {
             fullName: manager.fullName,
@@ -168,10 +195,13 @@ export const createOrganization = async (req: Request, res: Response) => {
           updatedAt: new Date(),
         });
 
-        await tx.update(users).set({
-          organizationId: organization.id,
-          updatedAt: new Date(),
-        }).where(eq(users.id, manager.id));
+        await tx
+          .update(users)
+          .set({
+            organizationId: organization.id,
+            updatedAt: new Date(),
+          })
+          .where(eq(users.id, manager.id));
       }
 
       return organization;
