@@ -9,6 +9,8 @@ export const generateAccessToken = (user: any) => {
       fullName: user.fullName,
       email: user.email,
       profileImageUrl: user.profileImageUrl ?? null,
+      organizationId: user.organizationId ?? null,
+      organizationRole: user.organizationRole ?? null,
     },
     process.env.JWT_SECRET!,
     {

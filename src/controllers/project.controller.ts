@@ -19,6 +19,7 @@ import {
   verifyProjectOwnership,
 } from "../utils/helper.js";
 import { ensurePrimaryOrganization, userBelongsToOrganization } from "../utils/organization.js";
+import { requireTrialQuota } from "../middleware/organizationAccess.js";
 
 const projectSchema = z.object({
   title: z.string().min(1, "Title is required"),
@@ -82,12 +83,6 @@ export const submitProject = async (req: Request, res: Response) => {
   parsed.researchArea = sanitizeString(parsed.researchArea);
 
   let uploadResult: any;
-  try {
-    uploadResult = await uploadToCloudinary(file.buffer);
-  } catch (error) {
-    console.log("Cloudinary upload failed:", error);
-    return errorResponse(res, 500, "File upload failed");
-  }
 
   try {
     const organizationId = await ensurePrimaryOrganization(studentId);
@@ -96,6 +91,20 @@ export const submitProject = async (req: Request, res: Response) => {
       if (!supervisorIsMember) {
         return errorResponse(res, 400, "The assigned supervisor is not a member of your organization.");
       }
+
+      (req as any).organization = {
+        organizationId,
+        role: "STUDENT",
+        subscription: null,
+      };
+      if (!(await requireTrialQuota(req, res, "PROJECTS"))) return;
+    }
+
+    try {
+      uploadResult = await uploadToCloudinary(file.buffer);
+    } catch (error) {
+      console.log("Cloudinary upload failed:", error);
+      return errorResponse(res, 500, "File upload failed");
     }
 
     const result = await db.transaction(async (tx) => {

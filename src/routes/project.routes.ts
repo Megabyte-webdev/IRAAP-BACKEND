@@ -9,6 +9,7 @@ import {
   getAllProjects,
 } from "../controllers/project.controller.js";
 import { authenticate, authorize, optionalAuthenticate } from "../middleware/auth.js";
+import { requireUserBillingEntitlement } from "../middleware/organizationAccess.js";
 import { uploadPdf } from "../middleware/upload.js";
 import {
   publishProject,
@@ -22,6 +23,7 @@ router.post(
   "/submit",
   authenticate,
   authorize(["STUDENT"]),
+  requireUserBillingEntitlement,
   uploadPdf("file"),
   submitProject,
 );

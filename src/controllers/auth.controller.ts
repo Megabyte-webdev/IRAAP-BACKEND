@@ -1,7 +1,12 @@
 import type { Request, Response } from "express";
 import crypto from "node:crypto";
 import { db } from "../config/db.js";
-import { authOtpChallenges, refreshTokens, users } from "../database/schema.js";
+import {
+  authOtpChallenges,
+  organizationMemberships,
+  refreshTokens,
+  users,
+} from "../database/schema.js";
 import { and, desc, eq, isNull } from "drizzle-orm";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
@@ -40,6 +45,19 @@ const resendSchema = z.object({
 
 const hash = (value: string) =>
   crypto.createHash("sha256").update(value).digest("hex");
+
+
+const getOrganizationAccess = async (userId: number) => {
+  const membership = await db.query.organizationMemberships.findFirst({
+    where: eq(organizationMemberships.userId, userId),
+    orderBy: [desc(organizationMemberships.createdAt)],
+    columns: { organizationId: true, role: true },
+  });
+  return {
+    organizationId: membership?.organizationId ?? null,
+    organizationRole: membership?.role ?? null,
+  };
+};
 
 const issueSession = async (res: Response, user: any) => {
   const accessToken = generateAccessToken(user);
@@ -291,6 +309,7 @@ export const verifyOtp = async (req: Request, res: Response) => {
         })
       : null;
 
+    const organizationAccess = await getOrganizationAccess(user.id);
     const { accessToken } = await issueSession(res, user);
     return res.json({
       success: true,
@@ -300,6 +319,8 @@ export const verifyOtp = async (req: Request, res: Response) => {
         fullName: user.fullName,
         email: user.email,
         role: user.role,
+        organizationId: organizationAccess.organizationId,
+        organizationRole: organizationAccess.organizationRole,
         supervisorId: user.supervisorId,
         profileImageUrl: user.profileImageUrl ?? null,
         profileComplete: Boolean(user.profileCompletedAt || (user.department && user.programme && user.level)),
@@ -431,8 +452,20 @@ export const refreshToken = async (req: Request, res: Response) => {
         .json({ success: false, message: "Session is invalid" });
 
     await db.delete(refreshTokens).where(eq(refreshTokens.token, token));
+    const organizationAccess = await getOrganizationAccess(user.id);
     const { accessToken } = await issueSession(res, user);
-    return res.json({ success: true, token: accessToken });
+    return res.json({
+      success: true,
+      token: accessToken,
+      user: {
+        id: user.id,
+        fullName: user.fullName,
+        email: user.email,
+        role: user.role,
+        organizationId: organizationAccess.organizationId,
+        organizationRole: organizationAccess.organizationRole,
+      },
+    });
   } catch (error) {
     console.error("Refresh token error:", error);
     return res

@@ -190,6 +190,31 @@ export const organizationSubscriptions = pgTable(
   }),
 );
 
+
+export const billingTransactions = pgTable(
+  "billing_transactions",
+  {
+    id: serial("id").primaryKey(),
+    organizationId: integer("organization_id")
+      .references(() => organizations.id, { onDelete: "cascade" })
+      .notNull(),
+    reference: varchar("reference", { length: 120 }).unique().notNull(),
+    planCode: varchar("plan_code", { length: 80 }).notNull(),
+    amount: integer("amount").notNull(),
+    currency: varchar("currency", { length: 10 }).notNull().default("NGN"),
+    customerEmail: varchar("customer_email", { length: 255 }).notNull(),
+    status: varchar("status", { length: 40 }).notNull().default("PENDING"),
+    provider: varchar("provider", { length: 30 }).notNull().default("PAYSTACK"),
+    paidAt: timestamp("paid_at"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    organizationIndex: index("billing_transactions_org_idx").on(table.organizationId),
+    statusIndex: index("billing_transactions_status_idx").on(table.status),
+  }),
+);
+
 export const supportTickets = pgTable(
   "support_tickets",
   {

@@ -13,6 +13,8 @@ import analyticsRoutes from "./src/routes/analytics.routes.js";
 import organizationRoutes from "./src/routes/organization.routes.js";
 import publicationRoutes from "./src/routes/publication.routes.js";
 import supportRoutes from "./src/routes/support.routes.js";
+import managerRoutes from "./src/routes/manager.routes.js";
+import billingRoutes from "./src/routes/billing.routes.js";
 import cors from "cors";
 import { applyGlobalSecurity } from "./src/middleware/rateLimiter.js";
 import "./src/listeners/email.listener.js";
@@ -25,6 +27,7 @@ import { initWebSocket } from "./src/services/ws.js";
 import { saveSubscription } from "./src/utils/pushStore.js";
 import bodyParser from "body-parser";
 import cookieParser from "cookie-parser";
+import { captureRawBody } from "./src/middleware/rawBody.js";
 dotenv.config();
 
 const app = express();
@@ -38,7 +41,11 @@ app.use(cors({ origin: allowedOrigins, credentials: true }));
 
 applyGlobalSecurity(app);
 
-app.use(express.json());
+app.use(
+  express.json({
+    verify: captureRawBody,
+  }),
+);
 app.use(cookieParser());
 app.use(express.urlencoded({ extended: true }));
 app.use(bodyParser.json());
@@ -69,6 +76,8 @@ app.use("/profile", profileRoutes);
 app.use("/analytics", analyticsRoutes);
 app.use("/organizations", organizationRoutes);
 app.use("/support", supportRoutes);
+app.use("/api/manager", managerRoutes);
+app.use("/api/billing", billingRoutes);
 
 app.post("/push/subscribe", (req, res) => {
   const { userId, subscription } = req.body;
