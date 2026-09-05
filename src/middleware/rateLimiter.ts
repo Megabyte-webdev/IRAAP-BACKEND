@@ -3,27 +3,25 @@ import { rateLimit } from "express-rate-limit";
 import { RedisStore, type RedisReply } from "rate-limit-redis";
 import { redisConnection } from "../config/redis.js";
 import helmet from "helmet";
-const globalStore = new RedisStore({
-  sendCommand: (command: string, ...args: string[]) =>
-    redisConnection.call(command, ...args) as Promise<RedisReply>,
-});
 
-const authStore = new RedisStore({
-  sendCommand: (command: string, ...args: string[]) =>
-    redisConnection.call(command, ...args) as Promise<RedisReply>,
-});
+const createRateLimitStore = (prefix: string) =>
+  new RedisStore({
+    prefix,
+    sendCommand: (command: string, ...args: string[]) =>
+      redisConnection.call(command, ...args) as Promise<RedisReply>,
+  });
 
 export const applyGlobalSecurity = (app: Express) => {
   // 1. Security Headers
   app.use((helmet as any)());
 
-  // 2. Redis-Backed Global Rate Limiter
+  // 2. Redis-backed global rate limiter
   const globalLimiter = rateLimit({
-    windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 200, // max requests per IP per window
+    windowMs: 15 * 60 * 1000,
+    max: 200,
     standardHeaders: true,
     legacyHeaders: false,
-    store: globalStore,
+    store: createRateLimitStore("iraap:ratelimit:global:"),
     message: {
       status: 429,
       success: false,
@@ -36,11 +34,13 @@ export const applyGlobalSecurity = (app: Express) => {
 
   // 3. Auth-specific brute-force limiter
   const authLimiter = rateLimit({
-    windowMs: 60 * 60 * 1000, // 1 hour
-    max: 10, // max failed attempts
-    skipSuccessfulRequests: true, // only block failures
+    windowMs: 60 * 60 * 1000,
+    max: 10,
+    skipSuccessfulRequests: true,
     skip: (req) => req.method === "OPTIONS",
-    store: authStore,
+    store: createRateLimitStore("iraap:ratelimit:auth:"),
+    standardHeaders: true,
+    legacyHeaders: false,
     message: {
       status: 429,
       success: false,
@@ -50,6 +50,7 @@ export const applyGlobalSecurity = (app: Express) => {
 
   app.use("/api/auth/login", authLimiter);
   app.use("/api/auth/register", authLimiter);
+
   app.use(
     "/api/auth/verify-otp",
     rateLimit({
@@ -57,10 +58,15 @@ export const applyGlobalSecurity = (app: Express) => {
       max: 15,
       standardHeaders: true,
       legacyHeaders: false,
-      store: authStore,
-      message: { status: 429, success: false, message: "Too many verification attempts. Request a new code." },
+      store: createRateLimitStore("iraap:ratelimit:verify-otp:"),
+      message: {
+        status: 429,
+        success: false,
+        message: "Too many verification attempts. Request a new code.",
+      },
     }),
   );
+
   app.use(
     "/api/auth/resend-otp",
     rateLimit({
@@ -68,8 +74,12 @@ export const applyGlobalSecurity = (app: Express) => {
       max: 5,
       standardHeaders: true,
       legacyHeaders: false,
-      store: authStore,
-      message: { status: 429, success: false, message: "Too many code requests. Please try again later." },
+      store: createRateLimitStore("iraap:ratelimit:resend-otp:"),
+      message: {
+        status: 429,
+        success: false,
+        message: "Too many code requests. Please try again later.",
+      },
     }),
   );
 
@@ -80,8 +90,12 @@ export const applyGlobalSecurity = (app: Express) => {
       max: 10,
       standardHeaders: true,
       legacyHeaders: false,
-      store: authStore,
-      message: { status: 429, success: false, message: "Too many profile photo uploads. Please try again later." },
+      store: createRateLimitStore("iraap:ratelimit:profile-image:"),
+      message: {
+        status: 429,
+        success: false,
+        message: "Too many profile photo uploads. Please try again later.",
+      },
     }),
   );
 };
