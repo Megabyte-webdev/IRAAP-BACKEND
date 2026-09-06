@@ -667,31 +667,55 @@ export const verifyOrganizationCheckout = async (
 };
 
 export const getOrganizationBilling = async (req: Request, res: Response) => {
-  const ctx = getContext(req);
-  const subscription = await getSubscription(ctx.organizationId);
-  const transactions = await db.query.billingTransactions.findMany({
-    where: eq(billingTransactions.organizationId, ctx.organizationId),
-    orderBy: [desc(billingTransactions.createdAt)],
-    limit: 20,
-  });
-  return res.json({
-    subscription,
-    transactions,
-    plans: {
-      INSTITUTION: {
-        paystackPlanCode: Boolean(PLAN_ENV.INSTITUTION),
-        amount: PLAN_AMOUNTS.INSTITUTION,
-        currency: process.env.BILLING_CURRENCY || "NGN",
-        interval: process.env.BILLING_INTERVAL || "monthly",
+  try {
+    const ctx = getContext(req);
+    const subscription = await getSubscription(ctx.organizationId);
+
+    const transactions = await db.query.billingTransactions.findMany({
+      where: eq(
+        billingTransactions.organizationId,
+        ctx.organizationId,
+      ),
+      orderBy: [desc(billingTransactions.createdAt)],
+      limit: 20,
+    });
+
+    return res.json({
+      success: true,
+      subscription,
+      transactions,
+      plans: {
+        INSTITUTION: {
+          paystackPlanCode: Boolean(PLAN_ENV.INSTITUTION),
+          amount: PLAN_AMOUNTS.INSTITUTION,
+          currency:
+            process.env.BILLING_CURRENCY || "NGN",
+          interval:
+            process.env.BILLING_INTERVAL || "monthly",
+        },
+        ENTERPRISE: {
+          paystackPlanCode: Boolean(PLAN_ENV.ENTERPRISE),
+          amount: PLAN_AMOUNTS.ENTERPRISE,
+          currency:
+            process.env.BILLING_CURRENCY || "NGN",
+          interval:
+            process.env.BILLING_INTERVAL || "monthly",
+        },
       },
-      ENTERPRISE: {
-        paystackPlanCode: Boolean(PLAN_ENV.ENTERPRISE),
-        amount: PLAN_AMOUNTS.ENTERPRISE,
-        currency: process.env.BILLING_CURRENCY || "NGN",
-        interval: process.env.BILLING_INTERVAL || "monthly",
-      },
-    },
-  });
+    });
+  } catch (error) {
+    console.error(
+      "getOrganizationBilling error:",
+      error,
+    );
+
+    return res.status(500).json({
+      success: false,
+      message:
+        "Unable to load organization billing right now.",
+      code: "BILLING_QUERY_FAILED",
+    });
+  }
 };
 
 export const paystackWebhook = async (req: Request, res: Response) => {
