@@ -15,6 +15,8 @@ import publicationRoutes from "./src/routes/publication.routes.js";
 import supportRoutes from "./src/routes/support.routes.js";
 import managerRoutes from "./src/routes/manager.routes.js";
 import billingRoutes from "./src/routes/billing.routes.js";
+import notificationRoutes from "./src/routes/notification.routes.js";
+import pushRoutes from "./src/routes/push.routes.js";
 import cors from "cors";
 import { applyGlobalSecurity } from "./src/middleware/rateLimiter.js";
 import "./src/listeners/email.listener.js";
@@ -24,45 +26,108 @@ import { testDbConnection } from "./src/config/db.js";
 import http from "http";
 import https from "https";
 import { initWebSocket } from "./src/services/ws.js";
-import { saveSubscription } from "./src/utils/pushStore.js";
 import bodyParser from "body-parser";
 import cookieParser from "cookie-parser";
 import { captureRawBody } from "./src/middleware/rawBody.js";
-dotenv.config();
+import "./src/config/webpush.js";
 
+dotenv.config();
 const app = express();
-const port = process.env.PORT || 3000;
+
+const port = Number(process.env.PORT) || 3000;
 
 app.set("trust proxy", 1);
 
-const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(",") || [];
+const allowedOrigins =
+  process.env.ALLOWED_ORIGINS?.split(",")
+    .map((origin) => origin.trim().replace(/\/$/, ""))
+    .filter(Boolean) || [];
 
-app.use(cors({ origin: allowedOrigins, credentials: true }));
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      if (!origin) {
+        return callback(null, true);
+      }
+
+      const normalizedOrigin = origin.trim().replace(/\/$/, "");
+      if (
+        allowedOrigins.length > 0 &&
+        allowedOrigins.includes(normalizedOrigin)
+      ) {
+        return callback(null, true);
+      }
+
+      console.warn(`[CORS] Blocked origin: ${origin}`);
+
+      return callback(new Error("Origin not allowed by CORS"), false);
+    },
+    credentials: true,
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: [
+      "Origin",
+      "X-Requested-With",
+      "Content-Type",
+      "Accept",
+      "Authorization",
+      "Cache-Control",
+      "Pragma",
+    ],
+    maxAge: 86400,
+  }),
+);
 
 applyGlobalSecurity(app);
 
 app.use(
   express.json({
     verify: captureRawBody,
+    limit: "10mb",
   }),
 );
+
 app.use(cookieParser());
-app.use(express.urlencoded({ extended: true }));
-app.use(bodyParser.json());
 
-app.use((err, _req, res, _next) => {
-  console.error(err);
-  res
-    .status(err.status || 500)
-    .json({ message: err.message || "Internal Server Error" });
-});
+app.use(
+  express.urlencoded({
+    extended: true,
+  }),
+);
 
-//Ping endpoint for Render health checks or external pinger
+app.use(
+  bodyParser.json({
+    limit: "10mb",
+  }),
+);
+
+const apiErrorHandler = (
+  err: any,
+  _req: express.Request,
+  res: express.Response,
+  _next: express.NextFunction,
+) => {
+  console.error("Unhandled API error:", err);
+  res.status(Number(err?.status) || 500).json({
+    success: false,
+    message: err?.message || "Internal Server Error",
+  });
+};
+
 app.get("/ping", (_req, res) => {
   res.status(200).send("pong");
 });
 
-// Use routes
+app.get("/health", (_req, res) => {
+  res.status(200).json({
+    success: true,
+    service: "iraap-api",
+    timestamp: new Date().toISOString(),
+  });
+});
+
+app.get("/", (_req, res) => {
+  res.send("IRAAP Research Platform API Running");
+});
 app.use("/auth", authRoutes);
 app.use("/projects", projectRoutes);
 app.use("/publications", publicationRoutes);
@@ -76,37 +141,31 @@ app.use("/profile", profileRoutes);
 app.use("/analytics", analyticsRoutes);
 app.use("/organizations", organizationRoutes);
 app.use("/support", supportRoutes);
-app.use("/api/manager", managerRoutes);
-app.use("/api/billing", billingRoutes);
-
-app.post("/push/subscribe", (req, res) => {
-  const { userId, subscription } = req.body;
-  console.log("SUBSCRIBE HIT", userId, subscription);
-
-  if (!userId || !subscription) {
-    return res.status(400).json({ error: "Missing data" });
-  }
-
-  saveSubscription(userId, subscription);
-
-  console.log("Push subscribed:", userId);
-
-  res.json({ success: true });
+app.use("/manager", managerRoutes);
+app.use("/billing", billingRoutes);
+app.use("/notifications", notificationRoutes);
+app.use("/push", pushRoutes);
+app.use((_req, res) => {
+  res.status(404).json({
+    success: false,
+    message: "API route not found",
+  });
 });
-
-app.get("/", (req, res) => {
-  res.send("Institutional Research Repository Server Running");
-});
+app.use(apiErrorHandler);
 
 const server = http.createServer(app);
+
 initWebSocket(server);
-
-// Self-ping keeping Render alive every 12 minutes
 const startSelfPing = () => {
-  const SERVER_URL = process.env.SERVER_URL; // e.g. "https://your-app.onrender.com"
-  if (!SERVER_URL) return;
+  const SERVER_URL = process.env.SERVER_URL;
 
-  const FOURTEEN_MINUTES = 12 * 60 * 1000;
+  if (!SERVER_URL) {
+    console.log("[Self-ping] SERVER_URL not configured. Skipping.");
+
+    return;
+  }
+
+  const TWELVE_MINUTES = 12 * 60 * 1000;
   const client = SERVER_URL.startsWith("https") ? https : http;
 
   setInterval(() => {
@@ -117,15 +176,26 @@ const startSelfPing = () => {
       .on("error", (err) => {
         console.error("Self-ping failed:", err.message);
       });
-  }, FOURTEEN_MINUTES);
+  }, TWELVE_MINUTES);
+
+  console.log(`[Self-ping] Enabled for ${SERVER_URL}`);
 };
 
-server.listen(Number(port), "0.0.0.0", () => {
-  testDbConnection();
-  startSelfPing();
+server.listen(Number(port), "0.0.0.0", async () => {
+  try {
+    await testDbConnection();
+    startSelfPing();
 
-  // Log the port specifically for Railway debugging
-  console.log(
-    `Server is strictly running on port ${port} and accessible to Railway`,
-  );
+    console.log(
+      `Server is strictly running on port ${port} and accessible to Railway/Render`,
+    );
+
+    console.log(
+      `[CORS] Allowed origins: ${
+        allowedOrigins.length ? allowedOrigins.join(", ") : "none configured"
+      }`,
+    );
+  } catch (error) {
+    console.error("Database startup check failed:", error);
+  }
 });
