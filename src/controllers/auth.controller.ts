@@ -630,18 +630,47 @@ export const resendOtp = async (req: Request, res: Response) => {
 export const logout = async (req: Request, res: Response) => {
   try {
     const token = req.cookies?.[REFRESH_COOKIE_NAME];
+
     if (token) {
       const tokenHash = hashRefreshToken(token);
-      await db
-        .update(refreshTokens)
-        .set({ revokedAt: new Date() })
-        .where(eq(refreshTokens.tokenHash, tokenHash));
+      const stored = await db.query.refreshTokens.findFirst({
+        where: eq(refreshTokens.tokenHash, tokenHash),
+        columns: {
+          id: true,
+          familyId: true,
+        },
+      });
+
+      if (stored?.familyId) {
+        // Logging out invalidates the whole refresh-session family so that
+        // every rotated token belonging to this browser session is revoked.
+        await db
+          .update(refreshTokens)
+          .set({ revokedAt: new Date() })
+          .where(eq(refreshTokens.familyId, stored.familyId));
+      } else {
+        await db
+          .update(refreshTokens)
+          .set({ revokedAt: new Date() })
+          .where(eq(refreshTokens.tokenHash, tokenHash));
+      }
     }
+  } catch (error) {
+    // Logout should remain idempotent even when the database/session record
+    // is already gone. The browser cookie is still cleared below.
+    console.error("Logout error:", error);
   } finally {
     res.clearCookie(REFRESH_COOKIE_NAME, {
-      path: "/",
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite:
+        process.env.NODE_ENV === "production"
+          ? ("none" as const)
+          : ("lax" as const),
       domain: process.env.COOKIE_DOMAIN || undefined,
+      path: "/",
     });
+
     return res.json({ success: true });
   }
 };
