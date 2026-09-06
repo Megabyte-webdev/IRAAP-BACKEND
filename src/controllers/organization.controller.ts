@@ -1,3 +1,4 @@
+import "../listeners/email.listener.js";
 import type { Request, Response } from "express";
 import { and, desc, eq, sql } from "drizzle-orm";
 import bcrypt from "bcrypt";
@@ -21,6 +22,9 @@ import { slugifyOrganization } from "../utils/organization.js";
 
 import { eventBus } from "../events/index.js";
 import { Events } from "../utils/email/email.types.js";
+import { sendOnboardingEmail } from "../utils/email/onboarding.js";
+import { createNotification } from "../services/notifications.js";
+import { sendEmail } from "../services/mail.js";
 
 const organizationSchema = z
   .object({
@@ -95,6 +99,8 @@ export const createOrganization = async (req: Request, res: Response) => {
   }
 
   try {
+    let managerOnboarding: { userId: number; email: string; fullName: string; password: string } | null = null;
+    let managerAssignment: { userId: number; email: string; fullName: string } | null = null;
     const existing = await db.query.organizations.findFirst({
       where: eq(organizations.slug, slug),
     });
@@ -175,18 +181,14 @@ export const createOrganization = async (req: Request, res: Response) => {
               password,
               role: "STUDENT",
               organizationId: organization.id,
+              mustChangePassword: true,
               updatedAt: new Date(),
             })
             .returning()) as any;
-
-          eventBus.emit(Events.USER_REGISTERED, {
-            fullName: manager.fullName,
-            email: manager.email,
-            password: temporaryPassword,
-            role: "Organization Manager",
-            senderType: "organization-onboarding",
-          });
+          managerOnboarding = { userId: manager.id, email: manager.email, fullName: manager.fullName, password: temporaryPassword };
         }
+
+        if (!managerOnboarding) managerAssignment = { userId: manager.id, email: manager.email, fullName: manager.fullName };
 
         await tx.insert(organizationMemberships).values({
           organizationId: organization.id,
@@ -207,9 +209,15 @@ export const createOrganization = async (req: Request, res: Response) => {
       return organization;
     });
 
-    return res.status(201).json({
-      organization: result,
-    });
+    if (managerOnboarding) {
+      await sendOnboardingEmail({ email: managerOnboarding.email, fullName: managerOnboarding.fullName, password: managerOnboarding.password, role: "Organization Manager", organizationName: result.name });
+      await createNotification({ userId: managerOnboarding.userId, organizationId: result.id, type: "ACCOUNT_CREATED", title: "Organization manager account created", message: `You have been added as a manager of ${result.name}. Sign in and change your temporary password.`, link: "/login" });
+    } else if (managerAssignment) {
+      await sendEmail(managerAssignment.email, `[IRAAP] You are now a manager of ${result.name}`, `<p>Hello ${managerAssignment.fullName},</p><p>You have been added as an organization manager for <strong>${result.name}</strong>. Sign in with your existing IRAAP account to manage members and research activity.</p>`, "onboarding");
+      await createNotification({ userId: managerAssignment.userId, organizationId: result.id, type: "ORGANIZATION_MANAGER_ASSIGNED", title: "You are an organization manager", message: `You have been added as a manager of ${result.name}.`, link: "/manager" });
+    }
+
+    return res.status(201).json({ organization: result });
   } catch (error) {
     console.error("createOrganization error", error);
     return errorResponse(res, 500, "Failed to create organization");
@@ -450,6 +458,7 @@ export const bulkImportOrganizationMembers = async (
             password,
             role: member.role === "SUPERVISOR" ? "SUPERVISOR" : "STUDENT",
             organizationId: parsed.data.organizationId,
+            mustChangePassword: true,
             updatedAt: new Date(),
           })
           .returning()) as any;
@@ -499,18 +508,8 @@ export const bulkImportOrganizationMembers = async (
         });
 
       if (generatedPassword) {
-        eventBus.emit(Events.USER_REGISTERED, {
-          fullName: user.fullName,
-          email: user.email,
-          password: generatedPassword,
-          role:
-            member.role === "SUPERVISOR"
-              ? "Supervisor"
-              : member.role === "RESEARCHER"
-                ? "Researcher"
-                : "Student",
-          senderType: "organization-onboarding",
-        });
+        await sendOnboardingEmail({ email: user.email, fullName: user.fullName, password: generatedPassword, role: member.role === "SUPERVISOR" ? "Supervisor" : member.role === "RESEARCHER" ? "Researcher" : "Student" });
+        await createNotification({ userId: user.id, organizationId: parsed.data.organizationId, type: "ACCOUNT_CREATED", title: "Your IRAAP account is ready", message: "Your organization account was created. Sign in and change your temporary password.", link: "/login" });
       }
     }
 

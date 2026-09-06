@@ -6,6 +6,9 @@ import {
   flushPendingMessages,
 } from "../controllers/wshandler.js";
 import { broadcastPresence, handlePresenceList } from "./presence.js";
+import { organizationMemberships } from "../database/schema.js";
+import { eq, desc } from "drizzle-orm";
+import { db } from "../config/db.js";
 
 type ClientMap = Map<number, AuthedWebSocket>;
 interface JWTPayload {
@@ -14,6 +17,7 @@ interface JWTPayload {
   fullName: string;
   email: string;
   profileImageUrl?: string | null;
+  organizationRole?: "STUDENT" | "SUPERVISOR" | "RESEARCHER" | "MANAGER" | null;
 }
 export const clients: ClientMap = new Map();
 
@@ -66,6 +70,8 @@ export function initWebSocket(server: any) {
       ws.fullName = decoded.fullName;
       ws.email = decoded.email;
       (ws as any).profileImageUrl = decoded.profileImageUrl ?? null;
+      const membership = await db.query.organizationMemberships.findFirst({ where: eq(organizationMemberships.userId, decoded.id), orderBy: [desc(organizationMemberships.createdAt)] });
+      (ws as any).organizationRole = membership?.role ?? null;
 
       // Close stale socket — but mark it so its close handler
       // does NOT broadcast offline (we're immediately replacing it)

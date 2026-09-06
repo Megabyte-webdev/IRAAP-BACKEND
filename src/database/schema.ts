@@ -9,6 +9,7 @@ import {
   index,
   unique,
   boolean,
+  jsonb,
 } from "drizzle-orm/pg-core";
 import { pgEnum } from "drizzle-orm/pg-core";
 
@@ -99,6 +100,7 @@ export const users = pgTable(
     email: varchar("email", { length: 255 }).unique().notNull(),
     password: text("password").notNull(),
     emailVerifiedAt: timestamp("email_verified_at"),
+    mustChangePassword: boolean("must_change_password").notNull().default(false),
     profileImageUrl: text("profile_image_url"),
     profileImagePublicId: text("profile_image_public_id"),
     phone: varchar("phone", { length: 30 }),
@@ -244,6 +246,50 @@ export const supportTickets = pgTable(
   (table) => ({
     statusIndex: index("support_ticket_status_idx").on(table.status),
     emailIndex: index("support_ticket_email_idx").on(table.email),
+  }),
+);
+
+
+export const notifications = pgTable(
+  "notifications",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id")
+      .references(() => users.id, { onDelete: "cascade" })
+      .notNull(),
+    organizationId: integer("organization_id").references(() => organizations.id, {
+      onDelete: "cascade",
+    }),
+    type: varchar("type", { length: 80 }).notNull(),
+    title: varchar("title", { length: 255 }).notNull(),
+    message: text("message").notNull(),
+    link: text("link"),
+    metadata: jsonb("metadata"),
+    readAt: timestamp("read_at"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    userCreatedIndex: index("notifications_user_created_idx").on(table.userId, table.createdAt),
+    userReadIndex: index("notifications_user_read_idx").on(table.userId, table.readAt),
+    organizationIndex: index("notifications_org_idx").on(table.organizationId),
+  }),
+);
+
+export const pushSubscriptions = pgTable(
+  "push_subscriptions",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id")
+      .references(() => users.id, { onDelete: "cascade" })
+      .notNull(),
+    endpoint: text("endpoint").notNull().unique(),
+    p256dh: text("p256dh").notNull(),
+    auth: text("auth").notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    userIndex: index("push_subscriptions_user_idx").on(table.userId),
   }),
 );
 
@@ -637,6 +683,7 @@ export const organizationsRelations = relations(
     publications: many(publicationRequests),
     primaryUsers: many(users, { relationName: "primaryOrganization" }),
     supportTickets: many(supportTickets),
+    notifications: many(notifications),
   }),
 );
 
@@ -698,6 +745,16 @@ export const usersRelations = relations(users, ({ many, one }) => ({
     references: [organizations.id],
     relationName: "primaryOrganization",
   }),
+}));
+
+
+export const notificationsRelations = relations(notifications, ({ one }) => ({
+  user: one(users, { fields: [notifications.userId], references: [users.id] }),
+  organization: one(organizations, { fields: [notifications.organizationId], references: [organizations.id] }),
+}));
+
+export const pushSubscriptionsRelations = relations(pushSubscriptions, ({ one }) => ({
+  user: one(users, { fields: [pushSubscriptions.userId], references: [users.id] }),
 }));
 
 export const projectsRelations = relations(projects, ({ one, many }) => ({

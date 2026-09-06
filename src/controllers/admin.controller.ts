@@ -1,4 +1,6 @@
+import "../listeners/email.listener.js";
 import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { sendOnboardingEmail } from "../utils/email/onboarding.js";
 import { categories, projects, users } from "../database/schema.js";
 import { db } from "../config/db.js";
 import type { Request, Response } from "express";
@@ -162,6 +164,7 @@ export const bulkImportStudents = async (req: Request, res: Response) => {
           email,
           password: passwordHash,
           role: "STUDENT" as const,
+          mustChangePassword: true,
         };
       }),
     );
@@ -171,19 +174,10 @@ export const bulkImportStudents = async (req: Request, res: Response) => {
       .values(studentsToInsert)
       .onConflictDoNothing({ target: users.email });
 
-    studentsToInsert.forEach((student) => {
-      const rawPassword = student.fullName
-        ?.toLowerCase()
-        ?.trim()
-        ?.split(" ")[0];
-      eventBus.emit(Events.USER_REGISTERED, {
-        fullName: student.fullName,
-        email: student.email,
-        password: rawPassword,
-        role: "Student",
-        senderType: "onboarding",
-      });
-    });
+    for (const student of studentsToInsert) {
+      const rawPassword = student.fullName?.toLowerCase()?.trim()?.split(" ")[0];
+      await sendOnboardingEmail({ email: student.email, fullName: student.fullName, password: rawPassword, role: "Student" });
+    }
 
     res.status(201).json({
       success: true,
@@ -223,6 +217,7 @@ export const bulkImportSupervisors = async (req: Request, res: Response) => {
           email,
           password: passwordHash,
           role: "SUPERVISOR" as const,
+          mustChangePassword: true,
         };
       }),
     );
@@ -232,19 +227,10 @@ export const bulkImportSupervisors = async (req: Request, res: Response) => {
       .values(supervisorsToInsert)
       .onConflictDoNothing({ target: users.email });
 
-    supervisorsToInsert.forEach((supervisor) => {
-      const rawPassword = supervisor.fullName
-        ?.toLowerCase()
-        ?.trim()
-        ?.split(" ")[0];
-      eventBus.emit(Events.USER_REGISTERED, {
-        fullName: supervisor.fullName,
-        email: supervisor.email,
-        password: `${rawPassword}@irap`,
-        role: "Supervisor",
-        senderType: "onboarding",
-      });
-    });
+    for (const supervisor of supervisorsToInsert) {
+      const rawPassword = supervisor.fullName?.toLowerCase()?.trim()?.split(" ")[0];
+      await sendOnboardingEmail({ email: supervisor.email, fullName: supervisor.fullName, password: `${rawPassword}@irap`, role: "Supervisor" });
+    }
 
     res.status(201).json({
       success: true,

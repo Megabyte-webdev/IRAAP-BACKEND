@@ -4,8 +4,11 @@ export const registeredTemplate = (data: {
   fullName: string;
   email: string;
   password: string;
-  role: "STUDENT" | "SUPERVISOR";
+  role: string;
+  organizationName?: string;
+  mustChangePassword?: boolean;
 }) => {
+  const frontendUrl = process.env.FRONTEND_URL || "https://iraap.com.ng";
   const html = `
     <!-- Category Label -->
     <p style="
@@ -35,7 +38,7 @@ export const registeredTemplate = (data: {
     </p>
 
     <p style="margin: 0 0 24px 0; color: #334155; font-size: 15px; line-height: 1.6;">
-      Your account has been successfully created as a <strong>${data?.role.toLowerCase()}</strong> on the Institutional Research Archive Platform (IRAAP). You can now log in using the credentials below.
+      Your account has been successfully created as a <strong>${data?.role.toLowerCase()}</strong> on the Institutional Research Archive Platform (IRAAP)${data?.organizationName ? ` for <strong>${data.organizationName}</strong>` : ""}. You can now log in using the credentials below.
     </p>
 
     <!-- Account Details Data Table -->
@@ -97,7 +100,7 @@ export const registeredTemplate = (data: {
     <table cellpadding="0" cellspacing="0" border="0" style="margin-bottom: 32px;">
       <tr>
         <td align="center" style="background-color: #3aa6ee;">
-          <a href="${process.env.FRONTEND_URL}/${data?.role.toLowerCase()}" target="_blank" rel="noopener noreferrer"
+          <a href="${frontendUrl}/${data?.role.toLowerCase()}" target="_blank" rel="noopener noreferrer"
             style="
               background-color: #3aa6ee;
               color: #ffffff;
@@ -127,7 +130,7 @@ export const registeredTemplate = (data: {
       margin: 0;
       line-height: 1.5;
     ">
-      For security reasons, please sign in and update your temporary password immediately upon your initial login.
+      <strong>Important:</strong> this is a temporary password. You must sign in and change it immediately on your first login.
     </p>
   `;
 

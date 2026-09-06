@@ -6,6 +6,7 @@ import {
   organizationMemberships,
   refreshTokens,
   users,
+  notifications,
 } from "../database/schema.js";
 import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import bcrypt from "bcrypt";
@@ -46,7 +47,6 @@ const resendSchema = z.object({
 const hash = (value: string) =>
   crypto.createHash("sha256").update(value).digest("hex");
 
-
 const getOrganizationAccess = async (userId: number) => {
   const membership = await db.query.organizationMemberships.findFirst({
     where: eq(organizationMemberships.userId, userId),
@@ -69,7 +69,10 @@ const hashRefreshToken = (value: string) =>
 const getRefreshCookieOptions = (maxAge: number) => ({
   httpOnly: true,
   secure: process.env.NODE_ENV === "production",
-  sameSite: process.env.NODE_ENV === "production" ? ("none" as const) : ("lax" as const),
+  sameSite:
+    process.env.NODE_ENV === "production"
+      ? ("none" as const)
+      : ("lax" as const),
   domain: process.env.COOKIE_DOMAIN || undefined,
   path: "/",
   maxAge,
@@ -81,9 +84,15 @@ const setRefreshCookie = (res: Response, token: string, maxAge: number) =>
 const issueSession = async (res: Response, user: any) => {
   const now = Date.now();
   const sessionExpiresAt = new Date(now + REFRESH_MAX_SESSION_MS);
-  const refreshExpiresAt = new Date(Math.min(now + REFRESH_IDLE_MS, sessionExpiresAt.getTime()));
+  const refreshExpiresAt = new Date(
+    Math.min(now + REFRESH_IDLE_MS, sessionExpiresAt.getTime()),
+  );
   const familyId = crypto.randomUUID().replace(/-/g, "");
-  const refreshToken = generateRefreshToken(user.id, sessionExpiresAt, familyId);
+  const refreshToken = generateRefreshToken(
+    user.id,
+    sessionExpiresAt,
+    familyId,
+  );
 
   await db.insert(refreshTokens).values({
     userId: user.id,
@@ -146,6 +155,205 @@ const createOtpChallenge = async ({
   return id;
 };
 
+const passwordChangeSchema = z.object({
+  currentPassword: z.string().min(1).optional(),
+  newPassword: z.string().min(8).max(128),
+});
+
+const resetPasswordSchema = z.object({
+  challengeId: z.string().min(20).max(64),
+  code: z.string().regex(/^\d{6}$/, "Enter the 6-digit code"),
+  password: z.string().min(8).max(128),
+});
+
+export const forgotPassword = async (req: Request, res: Response) => {
+  try {
+    const email = z
+      .string()
+      .trim()
+      .toLowerCase()
+      .email()
+      .parse(req.body?.email);
+    const user: any = await db.query.users.findFirst({
+      where: eq(users.email, email),
+    });
+    // Do not reveal whether an account exists.
+    if (!user) {
+      return res.json({
+        success: true,
+        message: "If an account exists, a verification code has been sent.",
+      });
+    }
+    const challengeId = await createOtpChallenge({
+      user,
+      email,
+      purpose: "PASSWORD_RESET",
+    });
+    return res.json({
+      success: true,
+      challengeId,
+      email,
+      purpose: "PASSWORD_RESET",
+      message: "A password reset code has been sent.",
+    });
+  } catch (err: any) {
+    if (err instanceof z.ZodError)
+      return res
+        .status(400)
+        .json({ success: false, message: "Enter a valid email address." });
+    console.error("Forgot password error:", err);
+    return res
+      .status(500)
+      .json({
+        success: false,
+        message: "Unable to start password recovery right now.",
+      });
+  }
+};
+
+export const resetPassword = async (req: Request, res: Response) => {
+  try {
+    const { challengeId, code, password } = resetPasswordSchema.parse(req.body);
+    const challenge: any = await db.query.authOtpChallenges.findFirst({
+      where: and(
+        eq(authOtpChallenges.id, challengeId),
+        eq(authOtpChallenges.purpose, "PASSWORD_RESET"),
+        isNull(authOtpChallenges.consumedAt),
+      ),
+    });
+    if (!challenge || challenge.expiresAt.getTime() <= Date.now())
+      return res
+        .status(400)
+        .json({
+          success: false,
+          message: "This verification code is invalid or expired.",
+        });
+    if (challenge.attempts >= OTP_MAX_ATTEMPTS)
+      return res
+        .status(429)
+        .json({
+          success: false,
+          message: "Too many incorrect attempts. Request a new code.",
+        });
+    const valid = safeEqual(hashOtp(challenge.id, code), challenge.codeHash);
+    if (!valid) {
+      await db
+        .update(authOtpChallenges)
+        .set({ attempts: challenge.attempts + 1 })
+        .where(eq(authOtpChallenges.id, challenge.id));
+      return res
+        .status(400)
+        .json({ success: false, message: "Incorrect verification code." });
+    }
+    if (!challenge.userId)
+      return res
+        .status(400)
+        .json({ success: false, message: "Verification session is invalid." });
+    const passwordHash = await bcrypt.hash(password, 12);
+    await db.transaction(async (tx) => {
+      await tx
+        .update(users)
+        .set({
+          password: passwordHash,
+          mustChangePassword: false,
+          updatedAt: new Date(),
+        })
+        .where(eq(users.id, challenge.userId));
+      await tx
+        .update(authOtpChallenges)
+        .set({ consumedAt: new Date() })
+        .where(eq(authOtpChallenges.id, challenge.id));
+      await tx
+        .update(refreshTokens)
+        .set({ revokedAt: new Date() })
+        .where(eq(refreshTokens.userId, challenge.userId));
+    });
+    return res.json({ success: true, message: "Password reset successfully." });
+  } catch (err: any) {
+    if (err instanceof z.ZodError)
+      return res
+        .status(400)
+        .json({
+          success: false,
+          message: "Invalid password reset request.",
+          errors: err.issues,
+        });
+    console.error("Reset password error:", err);
+    return res
+      .status(500)
+      .json({
+        success: false,
+        message: "Unable to reset your password right now.",
+      });
+  }
+};
+
+export const changePassword = async (req: Request, res: Response) => {
+  try {
+    const userId = Number((req as any).user?.id);
+    if (!userId)
+      return res
+        .status(401)
+        .json({ success: false, message: "Authentication required." });
+    const { currentPassword, newPassword } = passwordChangeSchema.parse(
+      req.body,
+    );
+    const user: any = await db.query.users.findFirst({
+      where: eq(users.id, userId),
+    });
+    if (!user)
+      return res
+        .status(404)
+        .json({ success: false, message: "User not found." });
+    if (
+      currentPassword &&
+      !(await bcrypt.compare(currentPassword, user.password))
+    )
+      return res
+        .status(400)
+        .json({ success: false, message: "Current password is incorrect." });
+    const passwordHash = await bcrypt.hash(newPassword, 12);
+    await db.transaction(async (tx) => {
+      await tx
+        .update(users)
+        .set({
+          password: passwordHash,
+          mustChangePassword: false,
+          updatedAt: new Date(),
+        })
+        .where(eq(users.id, userId));
+      await tx
+        .insert(notifications)
+        .values({
+          userId,
+          type: "SECURITY_PASSWORD_CHANGED",
+          title: "Password changed",
+          message: "Your IRAAP password was changed successfully.",
+          link: "/profile",
+        });
+    });
+    return res.json({
+      success: true,
+      message: "Password changed successfully.",
+    });
+  } catch (err: any) {
+    if (err instanceof z.ZodError)
+      return res
+        .status(400)
+        .json({
+          success: false,
+          message: err.issues[0]?.message || "Invalid password.",
+        });
+    console.error("Change password error:", err);
+    return res
+      .status(500)
+      .json({
+        success: false,
+        message: "Unable to change your password right now.",
+      });
+  }
+};
+
 export const register = async (req: Request, res: Response) => {
   try {
     const input = registerSchema.parse(req.body);
@@ -154,12 +362,10 @@ export const register = async (req: Request, res: Response) => {
     });
 
     if (existingUser) {
-      return res
-        .status(409)
-        .json({
-          success: false,
-          message: "An account with this email already exists.",
-        });
+      return res.status(409).json({
+        success: false,
+        message: "An account with this email already exists.",
+      });
     }
 
     const password = await bcrypt.hash(input.password, 12);
@@ -177,6 +383,7 @@ export const register = async (req: Request, res: Response) => {
         email: users.email,
         role: users.role,
         supervisorId: users.supervisorId,
+        mustChangePassword: users.mustChangePassword,
       });
 
     const challengeId = await createOtpChallenge({
@@ -191,24 +398,21 @@ export const register = async (req: Request, res: Response) => {
       purpose: "SIGNUP",
       challengeId,
       email: user.email,
+      mustChangePassword: Boolean(user.mustChangePassword),
       message: "We sent a verification code to your email.",
     });
   } catch (err: any) {
     if (err instanceof z.ZodError)
-      return res
-        .status(400)
-        .json({
-          success: false,
-          message: "Validation failed",
-          errors: err.issues,
-        });
-    console.error("Registration error:", err);
-    return res
-      .status(500)
-      .json({
+      return res.status(400).json({
         success: false,
-        message: "Unable to create your account right now.",
+        message: "Validation failed",
+        errors: err.issues,
       });
+    console.error("Registration error:", err);
+    return res.status(500).json({
+      success: false,
+      message: "Unable to create your account right now.",
+    });
   }
 };
 
@@ -237,17 +441,16 @@ export const login = async (req: Request, res: Response) => {
       purpose: "LOGIN",
       challengeId,
       email: user.email,
+      mustChangePassword: Boolean(user.mustChangePassword),
       message: "We sent a verification code to your email.",
     });
   } catch (err: any) {
     if (err instanceof z.ZodError)
-      return res
-        .status(400)
-        .json({
-          success: false,
-          message: "Validation failed",
-          errors: err.issues,
-        });
+      return res.status(400).json({
+        success: false,
+        message: "Validation failed",
+        errors: err.issues,
+      });
     console.error("Login error:", err);
     return res
       .status(500)
@@ -266,21 +469,17 @@ export const verifyOtp = async (req: Request, res: Response) => {
     });
 
     if (!challenge || challenge.expiresAt.getTime() <= Date.now()) {
-      return res
-        .status(400)
-        .json({
-          success: false,
-          message: "This verification code is invalid or expired.",
-        });
+      return res.status(400).json({
+        success: false,
+        message: "This verification code is invalid or expired.",
+      });
     }
 
     if (challenge.attempts >= OTP_MAX_ATTEMPTS) {
-      return res
-        .status(429)
-        .json({
-          success: false,
-          message: "Too many incorrect attempts. Request a new code.",
-        });
+      return res.status(429).json({
+        success: false,
+        message: "Too many incorrect attempts. Request a new code.",
+      });
     }
 
     const valid = safeEqual(hashOtp(challenge.id, code), challenge.codeHash);
@@ -346,25 +545,25 @@ export const verifyOtp = async (req: Request, res: Response) => {
         organizationRole: organizationAccess.organizationRole,
         supervisorId: user.supervisorId,
         profileImageUrl: user.profileImageUrl ?? null,
-        profileComplete: Boolean(user.profileCompletedAt || (user.department && user.programme && user.level)),
+        profileComplete: Boolean(
+          user.profileCompletedAt ||
+          (user.department && user.programme && user.level),
+        ),
+        mustChangePassword: Boolean(user.mustChangePassword),
         supervisorName: supervisor?.fullName ?? null,
       },
     });
   } catch (err: any) {
     if (err instanceof z.ZodError)
-      return res
-        .status(400)
-        .json({
-          success: false,
-          message: "Enter the 6-digit verification code.",
-        });
-    console.error("OTP verification error:", err);
-    return res
-      .status(500)
-      .json({
+      return res.status(400).json({
         success: false,
-        message: "Unable to verify the code right now.",
+        message: "Enter the 6-digit verification code.",
       });
+    console.error("OTP verification error:", err);
+    return res.status(500).json({
+      success: false,
+      message: "Unable to verify the code right now.",
+    });
   }
 };
 
@@ -380,21 +579,17 @@ export const resendOtp = async (req: Request, res: Response) => {
     });
 
     if (!challenge || challenge.expiresAt.getTime() <= Date.now()) {
-      return res
-        .status(400)
-        .json({
-          success: false,
-          message: "This verification session has expired. Start again.",
-        });
+      return res.status(400).json({
+        success: false,
+        message: "This verification session has expired. Start again.",
+      });
     }
 
     if (Date.now() - challenge.lastSentAt.getTime() < OTP_RESEND_COOLDOWN_MS) {
-      return res
-        .status(429)
-        .json({
-          success: false,
-          message: "Please wait before requesting another code.",
-        });
+      return res.status(429).json({
+        success: false,
+        message: "Please wait before requesting another code.",
+      });
     }
 
     const user = challenge.userId
@@ -425,12 +620,10 @@ export const resendOtp = async (req: Request, res: Response) => {
         .status(400)
         .json({ success: false, message: "Invalid verification request." });
     console.error("OTP resend error:", err);
-    return res
-      .status(500)
-      .json({
-        success: false,
-        message: "Unable to resend the verification code.",
-      });
+    return res.status(500).json({
+      success: false,
+      message: "Unable to resend the verification code.",
+    });
   }
 };
 
@@ -467,7 +660,10 @@ export const refreshToken = async (req: Request, res: Response) => {
   try {
     decoded = jwt.verify(token, process.env.JWT_REFRESH_SECRET!);
   } catch (error: any) {
-    console.warn("Refresh token cryptographic validation failed:", error?.message || error);
+    console.warn(
+      "Refresh token cryptographic validation failed:",
+      error?.message || error,
+    );
     res.clearCookie(REFRESH_COOKIE_NAME, {
       path: "/",
       domain: process.env.COOKIE_DOMAIN || undefined,
@@ -475,11 +671,18 @@ export const refreshToken = async (req: Request, res: Response) => {
     return res.status(401).json({
       success: false,
       message: "Refresh session is invalid or expired",
-      code: error?.name === "TokenExpiredError" ? "REFRESH_EXPIRED" : "REFRESH_INVALID",
+      code:
+        error?.name === "TokenExpiredError"
+          ? "REFRESH_EXPIRED"
+          : "REFRESH_INVALID",
     });
   }
 
-  if (!decoded?.id || !decoded?.familyId || typeof decoded.familyId !== "string") {
+  if (
+    !decoded?.id ||
+    !decoded?.familyId ||
+    typeof decoded.familyId !== "string"
+  ) {
     return res.status(401).json({
       success: false,
       message: "Refresh session is invalid",
@@ -503,11 +706,21 @@ export const refreshToken = async (req: Request, res: Response) => {
       });
 
       if (!stored) {
-        return { ok: false as const, status: 401, code: "REFRESH_INVALID", message: "Refresh session is invalid" };
+        return {
+          ok: false as const,
+          status: 401,
+          code: "REFRESH_INVALID",
+          message: "Refresh session is invalid",
+        };
       }
 
       if (stored.familyId !== decoded.familyId) {
-        return { ok: false as const, status: 401, code: "REFRESH_INVALID", message: "Refresh session is invalid" };
+        return {
+          ok: false as const,
+          status: 401,
+          code: "REFRESH_INVALID",
+          message: "Refresh session is invalid",
+        };
       }
 
       if (stored.revokedAt) {

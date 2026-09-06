@@ -3,6 +3,11 @@ import { Events } from "../utils/email/email.types.js";
 import { getEmailData } from "../utils/email/engine.js";
 import { emailQueue, meetingReminderQueue } from "../queues/email.queue.js";
 import { getReminderTimes } from "../utils/helper.js";
+import { sendEmail } from "../services/mail.js";
+import { createNotification } from "../services/notifications.js";
+import { db } from "../config/db.js";
+import { eq } from "drizzle-orm";
+import { users } from "../database/schema.js";
 
 const sendDirectEmail = async (
   type: string,
@@ -13,21 +18,33 @@ const sendDirectEmail = async (
   const emailInfo = getEmailData(type, payload);
   if (!emailInfo) return;
 
-  await emailQueue.add(
-    "send-email",
-    {
-      type,
-      to,
-      payload,
-      senderType: senderType || "system",
-    },
-    {
-      removeOnComplete: true,
-      removeOnFail: 100,
-    },
-  );
+  const sender = senderType || "system";
+  // Deliver immediately so production does not depend on a separately running BullMQ worker.
+  // On failure, queue the message for retry by the worker.
+  const sent = await sendEmail(to, emailInfo.subject, emailInfo.html, sender as any);
+  if (!sent.success) {
+    await emailQueue.add(
+      "send-email",
+      { type, to, payload, senderType: sender },
+      { removeOnComplete: true, removeOnFail: 100 },
+    );
+    console.warn(`Email send failed; queued retry for ${to} (${type})`);
+  } else {
+    console.log(`Email sent to ${to} for ${type}`);
+  }
 
-  console.log(`Queued email to ${to} for ${type}`);
+  const user = await db.query.users.findFirst({ where: eq(users.email, to.toLowerCase()) });
+  if (user) {
+    await createNotification({
+      userId: user.id,
+      organizationId: user.organizationId ?? null,
+      type,
+      title: emailInfo.subject,
+      message: payload?.notificationMessage || emailInfo.subject,
+      link: payload?.dashboardUrl ? "/dashboard" : "/dashboard",
+      metadata: { emailType: type },
+    });
+  }
 };
 
 // REVIEW CREATED

@@ -1,3 +1,4 @@
+import "../listeners/email.listener.js";
 import type { Request, Response } from "express";
 import crypto from "node:crypto";
 import bcrypt from "bcrypt";
@@ -17,6 +18,8 @@ import { errorResponse, sanitizeString } from "../utils/helper.js";
 import { requireTrialQuota } from "../middleware/organizationAccess.js";
 import { eventBus } from "../events/index.js";
 import { Events } from "../utils/email/email.types.js";
+import { sendOnboardingEmail } from "../utils/email/onboarding.js";
+import { createNotification } from "../services/notifications.js";
 
 const createManagerSchema = z.object({
   fullName: z.string().trim().min(2).max(255),
@@ -272,24 +275,20 @@ export const addOrganizationMemberByManager = async (
           password,
           role: parsed.data.role === "SUPERVISOR" ? "SUPERVISOR" : "STUDENT",
           organizationId: ctx.organizationId,
+          mustChangePassword: true,
           department: parsed.data.department || null,
           updatedAt: new Date(),
         })
         .returning()) as any;
       user = created;
 
-      eventBus.emit(Events.USER_REGISTERED, {
-        fullName: created.fullName,
+      await sendOnboardingEmail({
         email: created.email,
+        fullName: created.fullName,
         password: temporaryPassword,
-        role:
-          parsed.data.role === "SUPERVISOR"
-            ? "Supervisor"
-            : parsed.data.role === "RESEARCHER"
-              ? "Researcher"
-              : "Student",
-        senderType: "organization-onboarding",
+        role: parsed.data.role === "SUPERVISOR" ? "Supervisor" : parsed.data.role === "RESEARCHER" ? "Researcher" : "Student",
       });
+      await createNotification({ userId: created.id, organizationId: ctx.organizationId, type: "ACCOUNT_CREATED", title: "Your IRAAP account is ready", message: "Your organization account was created. Sign in and change your temporary password.", link: "/login" });
     }
 
     const [membership] = await db
@@ -390,17 +389,18 @@ export const createOrganizationManager = async (
           password,
           role: "STUDENT",
           organizationId: ctx.organizationId,
+          mustChangePassword: true,
           updatedAt: new Date(),
         })
         .returning()) as any;
       user = created;
-      eventBus.emit(Events.USER_REGISTERED, {
-        fullName: created.fullName,
+      await sendOnboardingEmail({
         email: created.email,
+        fullName: created.fullName,
         password: temporaryPassword,
         role: "Organization Manager",
-        senderType: "organization-onboarding",
       });
+      await createNotification({ userId: created.id, organizationId: ctx.organizationId, type: "ACCOUNT_CREATED", title: "Manager account created", message: "Your IRAAP organization manager account is ready. Sign in and change your temporary password.", link: "/login" });
     }
 
     const [membership] = await db.transaction(async (tx) => {

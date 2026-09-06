@@ -1,3 +1,4 @@
+import "../listeners/email.listener.js";
 import { and, eq, inArray, or } from "drizzle-orm";
 import type { AuthedWebSocket } from "../utils/types/ws.js";
 import type { ClientMessage } from "../utils/types/websocket.js";
@@ -15,6 +16,7 @@ import { execute, safeSend, sendWsError } from "../utils/ws-response.js";
 import { createMeeting } from "../services/meetingsdk.js";
 import { eventBus } from "../events/index.js";
 import { Events } from "../utils/email/email.types.js";
+import { createNotification } from "../services/notifications.js";
 
 export async function handleMessage(ws: AuthedWebSocket, raw: string) {
   let msg: ClientMessage;
@@ -62,12 +64,18 @@ async function handleChatSend(
     return sendWsError(ws, "UNAUTHORIZED", "Authentication required.");
   }
 
-  const recipient = await db.query.users.findFirst({
-    where: eq(users.id, msg.recipientId),
-  });
+  const recipient = await db.query.users.findFirst({ where: eq(users.id, msg.recipientId) });
 
   if (!recipient) {
     return sendWsError(ws, "RECIPIENT_NOT_FOUND", "Recipient does not exist.");
+  }
+  const senderUser = await db.query.users.findFirst({ where: eq(users.id, ws.userId), columns: { organizationId: true } });
+  const canUseOrganizationChat = Boolean(senderUser?.organizationId && recipient.organizationId && senderUser.organizationId === recipient.organizationId);
+  const isSupervisorStudentPair = (ws.userRole === "SUPERVISOR" && recipient.role === "STUDENT") || (ws.userRole === "STUDENT" && recipient.role === "SUPERVISOR");
+  const isAdminChat = ws.userRole === "ADMIN" || recipient.role === "ADMIN";
+  const isManagerChat = Boolean((ws as any).organizationRole === "MANAGER" && canUseOrganizationChat);
+  if (!isSupervisorStudentPair && !isManagerChat && !canUseOrganizationChat && !isAdminChat) {
+    return sendWsError(ws, "FORBIDDEN", "You can only message people in your organization or your supervision network.");
   }
   const content = msg.content?.trim() ?? "";
   const msgType = msg?.msgType ?? "TEXT";
@@ -103,8 +111,9 @@ async function handleChatSend(
       .insert(conversations)
       .values({
         supervisorId:
-          ws.userRole === "SUPERVISOR" ? ws.userId : msg.recipientId,
-        studentId: ws.userRole === "STUDENT" ? ws.userId : msg.recipientId,
+          ((ws as any).organizationRole === "MANAGER" || ws.userRole === "SUPERVISOR") ? ws.userId : msg.recipientId,
+        studentId:
+          ((ws as any).organizationRole === "MANAGER" || ws.userRole === "SUPERVISOR") ? msg.recipientId : ws.userId,
       })
       .returning()
       .then((r) => r[0]);
@@ -114,7 +123,7 @@ async function handleChatSend(
   let meetingUrl: null | string = null;
 
   if (msgType === "CALL_INVITE") {
-    if (ws.userRole !== "SUPERVISOR") {
+    if (ws.userRole !== "SUPERVISOR" || (ws as any).organizationRole === "MANAGER") {
       return sendWsError(
         ws,
         "FORBIDDEN",
@@ -275,18 +284,21 @@ async function handleChatSend(
     });
 
     try {
-      await sendPushNotification({
-        senderId: payload.senderId,
-        receiverId: msg.recipientId,
-        senderName: ws.fullName,
-        message: content,
-        avatar: null,
-        role: recipientSocket.userRole?.toLowerCase(),
-      });
-    } catch (error) {
-      console.warn(error);
-    }
+      await sendPushNotification({ senderId: payload.senderId, receiverId: msg.recipientId, senderName: ws.fullName, message: content, avatar: null, role: recipientSocket.userRole?.toLowerCase() });
+    } catch (error) { console.warn(error); }
   }
+  try {
+    await createNotification({
+      userId: msg.recipientId,
+      organizationId: recipient.organizationId ?? null,
+      type: msgType === "CALL_INVITE" ? "MEETING_INVITE" : "CHAT_MESSAGE",
+      title: msgType === "CALL_INVITE" ? `Meeting invitation from ${ws.fullName}` : `New message from ${ws.fullName}`,
+      message: content || (msgType === "CALL_INVITE" ? "You have a new meeting invitation." : "You received a new message."),
+      link: `/${((recipient.role || "STUDENT").toLowerCase())}/chat/${ws.userId}`,
+      metadata: { conversationId: convo.id, messageId: saved.id, senderId: ws.userId },
+    });
+  } catch (error) { console.warn("Failed to create chat notification:", error); }
+
   if (msgType === "CALL_INVITE" && msg.meeting?.scheduledAt) {
     try {
       const meetingId = meetingRecord?.meetingId || String(saved.id);

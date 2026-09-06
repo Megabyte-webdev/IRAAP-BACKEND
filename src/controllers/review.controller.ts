@@ -1,3 +1,4 @@
+import "../listeners/email.listener.js";
 import type { Request, Response } from "express";
 import {
   projects,

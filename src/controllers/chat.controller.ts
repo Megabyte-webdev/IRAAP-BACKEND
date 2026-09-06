@@ -130,34 +130,18 @@ export async function getChatableUsers(req: Request, res: Response) {
 
   const currentUser = await db.query.users.findFirst({
     where: eq(users.id, userId),
-    columns: {
-      supervisorId: true,
-      role: true,
-    },
+    columns: { supervisorId: true, role: true, organizationId: true },
   });
   let whereClause;
-
-  if (role === "SUPERVISOR") {
-    // Students under me + other supervisors
-    whereClause = and(
-      ne(users.id, userId),
-      or(
-        eq(users.supervisorId, userId),
-        and(eq(users.role, "SUPERVISOR"), ne(users.id, userId)),
-      ),
-    );
+  if (currentUser?.role === "ADMIN") {
+    whereClause = ne(users.id, userId);
+  } else if (currentUser?.organizationId) {
+    // Organization members can discover and message other members.
+    whereClause = and(ne(users.id, userId), eq(users.organizationId, currentUser.organizationId));
+  } else if (role === "SUPERVISOR") {
+    whereClause = and(ne(users.id, userId), or(eq(users.supervisorId, userId), and(eq(users.role, "SUPERVISOR"), ne(users.id, userId))));
   } else {
-    // My supervisor + students sharing my supervisor
-    whereClause = and(
-      ne(users.id, userId),
-      or(
-        eq(users.id, currentUser!.supervisorId!),
-        and(
-          eq(users.supervisorId, currentUser!.supervisorId!),
-          eq(users.role, "STUDENT"),
-        ),
-      ),
-    );
+    whereClause = and(ne(users.id, userId), or(eq(users.id, currentUser!.supervisorId!), and(eq(users.supervisorId, currentUser!.supervisorId!), eq(users.role, "STUDENT"))));
   }
 
   // Existing conversations
@@ -254,6 +238,16 @@ export async function getMessages(
   if (otherUserId === currentUserId) {
     return res.status(400).json({ error: "Cannot get messages with yourself" });
   }
+  const [current, other] = await Promise.all([
+    db.query.users.findFirst({ where: eq(users.id, currentUserId), columns: { organizationId: true, supervisorId: true, role: true } }),
+    db.query.users.findFirst({ where: eq(users.id, otherUserId), columns: { organizationId: true, supervisorId: true, role: true } }),
+  ]);
+  const sameOrg = Boolean(current?.organizationId && current.organizationId === other?.organizationId);
+  const supervisionNetwork = Boolean(
+    (current?.role === "SUPERVISOR" && other?.supervisorId === currentUserId) ||
+    (other?.role === "SUPERVISOR" && current?.supervisorId === otherUserId),
+  );
+  if (!sameOrg && !supervisionNetwork) return res.status(403).json({ error: "You cannot access this conversation" });
 
   // Resolve the conversation between these two users
   const convo = await db.query.conversations.findFirst({

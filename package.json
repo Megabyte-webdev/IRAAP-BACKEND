@@ -6,7 +6,7 @@
   "scripts": {
     "build": "npx tsc",
     "start": "npx tsc && node ./dist/server.js",
-    "dev": "nodemon",
+    "dev": "tsx watch src/server.ts",
     "db:generate": "drizzle-kit generate",
     "db:push": "drizzle-kit push",
     "db:migrate": "drizzle-kit migrate",
