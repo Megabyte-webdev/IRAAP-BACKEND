@@ -12,6 +12,7 @@ import {
   organizations,
   projects,
   publicationRequests,
+  downloads,
   users,
 } from "../database/schema.js";
 import { errorResponse, sanitizeString } from "../utils/helper.js";
@@ -20,6 +21,7 @@ import { eventBus } from "../events/index.js";
 import { Events } from "../utils/email/email.types.js";
 import { sendOnboardingEmail } from "../utils/email/onboarding.js";
 import { createNotification } from "../services/notifications.js";
+import { sendEmail } from "../services/mail.js";
 
 const createManagerSchema = z.object({
   fullName: z.string().trim().min(2).max(255),
@@ -66,7 +68,7 @@ export const getManagerDashboard = async (req: Request, res: Response) => {
       projectsCount,
       approvedProjects,
       pendingPublications,
-      downloads,
+      downloadsCount,
     ] = await Promise.all([
       db
         .select({ count: sql<number>`count(*)::int` })
@@ -132,7 +134,8 @@ export const getManagerDashboard = async (req: Request, res: Response) => {
         ),
       db
         .select({ count: sql<number>`count(*)::int` })
-        .from(projects)
+        .from(downloads)
+        .innerJoin(projects, eq(downloads.projectId, projects.id))
         .where(eq(projects.organizationId, ctx.organizationId)),
     ]);
     const subscription = await getSubscription(ctx.organizationId);
@@ -159,7 +162,7 @@ export const getManagerDashboard = async (req: Request, res: Response) => {
         projects: projectsCount[0]?.count ?? 0,
         approvedProjects: approvedProjects[0]?.count ?? 0,
         pendingPublications: pendingPublications[0]?.count ?? 0,
-        downloads: downloads[0]?.count ?? 0,
+        downloads: downloadsCount[0]?.count ?? 0,
       },
       trialLimits: {
         members: Number(process.env.FREE_TRIAL_MAX_MEMBERS || 25),
@@ -224,6 +227,7 @@ export const addOrganizationMemberByManager = async (
     let user = await db.query.users.findFirst({
       where: eq(users.email, parsed.data.email),
     });
+    const createdNewUser = !user;
 
     if (user) {
       if (user.role === "ADMIN")
@@ -291,6 +295,9 @@ export const addOrganizationMemberByManager = async (
       await createNotification({ userId: created.id, organizationId: ctx.organizationId, type: "ACCOUNT_CREATED", title: "Your IRAAP account is ready", message: "Your organization account was created. Sign in and change your temporary password.", link: "/login" });
     }
 
+    const isExistingAccount = !createdNewUser;
+    const memberRoleLabel = parsed.data.role[0] + parsed.data.role.slice(1).toLowerCase();
+
     const [membership] = await db
       .insert(organizationMemberships)
       .values({
@@ -311,7 +318,32 @@ export const addOrganizationMemberByManager = async (
       })
       .where(eq(users.id, user.id));
 
-    return res.status(201).json({ membership });
+    if (isExistingAccount) {
+      const organization = await db.query.organizations.findFirst({
+        where: eq(organizations.id, ctx.organizationId),
+        columns: { id: true, name: true },
+      });
+      const organizationName = organization?.name || "your organization";
+
+      await createNotification({
+        userId: user.id,
+        organizationId: ctx.organizationId,
+        type: "ORGANIZATION_MEMBER_ADDED",
+        title: `Added to ${organizationName}`,
+        message: `You have been added to ${organizationName} as a ${memberRoleLabel}.`,
+        link: "/chat",
+        metadata: { organizationId: ctx.organizationId, role: parsed.data.role },
+      });
+
+      await sendEmail(
+        user.email,
+        `[IRAAP] You have been added to ${organizationName}`,
+        `<p>Hello ${user.fullName},</p><p>You have been added to <strong>${organizationName}</strong> as a <strong>${memberRoleLabel}</strong>.</p><p>Your existing IRAAP account is still your account. You can sign in normally and access your organization workspace.</p>`,
+        "onboarding",
+      );
+    }
+
+    return res.status(201).json({ membership, existingAccount: isExistingAccount });
   } catch (error) {
     console.error("addOrganizationMemberByManager error", error);
     return errorResponse(res, 500, "Failed to add organization member");
@@ -337,6 +369,7 @@ export const createOrganizationManager = async (
     let user = await db.query.users.findFirst({
       where: eq(users.email, email),
     });
+    const createdNewUser = !user;
 
     if (user) {
       if (user.role === "ADMIN")
@@ -426,7 +459,30 @@ export const createOrganizationManager = async (
       return [m] as const;
     });
 
-    return res.status(201).json({ membership });
+    if (!createdNewUser) {
+      const organization = await db.query.organizations.findFirst({
+        where: eq(organizations.id, ctx.organizationId),
+        columns: { id: true, name: true },
+      });
+      const organizationName = organization?.name || "your organization";
+      await createNotification({
+        userId: user.id,
+        organizationId: ctx.organizationId,
+        type: "ORGANIZATION_MANAGER_ASSIGNED",
+        title: `You are now a manager of ${organizationName}`,
+        message: `You have been given organization manager access in ${organizationName}.`,
+        link: "/manager",
+        metadata: { organizationId: ctx.organizationId, role: "MANAGER" },
+      });
+      await sendEmail(
+        user.email,
+        `[IRAAP] You are now a manager of ${organizationName}`,
+        `<p>Hello ${user.fullName},</p><p>You have been added as an <strong>organization manager</strong> for <strong>${organizationName}</strong>.</p><p>Sign in with your existing IRAAP account to manage members, research activity, and billing.</p>`,
+        "onboarding",
+      );
+    }
+
+    return res.status(201).json({ membership, existingAccount: !createdNewUser });
   } catch (error: any) {
     console.error("createOrganizationManager error", error);
     return errorResponse(res, 500, "Failed to add manager");
@@ -498,6 +554,20 @@ export const updateOrganizationMemberRole = async (
       })
       .where(eq(users.id, userId));
 
+    const organization = await db.query.organizations.findFirst({
+      where: eq(organizations.id, ctx.organizationId),
+      columns: { name: true },
+    });
+    await createNotification({
+      userId,
+      organizationId: ctx.organizationId,
+      type: "ORGANIZATION_ROLE_UPDATED",
+      title: "Your organization role changed",
+      message: `Your role in ${organization?.name || "the organization"} is now ${parsed.data.role}.`,
+      link: parsed.data.role === "MANAGER" ? "/manager" : "/chat",
+      metadata: { organizationId: ctx.organizationId, role: parsed.data.role },
+    });
+
     return res.json({ membership: updated });
   } catch (error) {
     console.error("updateOrganizationMemberRole error", error);
@@ -543,6 +613,20 @@ export const removeOrganizationMemberByManager = async (
         updatedAt: new Date(),
       })
       .where(eq(users.id, userId));
+
+    const organization = await db.query.organizations.findFirst({
+      where: eq(organizations.id, ctx.organizationId),
+      columns: { name: true },
+    });
+    await createNotification({
+      userId,
+      organizationId: ctx.organizationId,
+      type: "ORGANIZATION_MEMBER_REMOVED",
+      title: `Removed from ${organization?.name || "organization"}`,
+      message: `Your membership in ${organization?.name || "the organization"} has been removed. Your IRAAP account remains active.`,
+      link: "/dashboard",
+      metadata: { organizationId: ctx.organizationId },
+    });
 
     return res.json({ success: true });
   } catch (error) {
