@@ -753,17 +753,16 @@ export const refreshToken = async (req: Request, res: Response) => {
       }
 
       if (stored.revokedAt) {
-        // A revoked refresh token being presented again is a strong signal of
-        // token theft/reuse. Revoke every token in the family immediately.
-        await tx
-          .update(refreshTokens)
-          .set({ revokedAt: now })
-          .where(eq(refreshTokens.familyId, stored.familyId));
+        // A refresh request can legitimately arrive with the immediately
+        // previous token when two tabs/requests refresh at nearly the same
+        // time. Do NOT revoke the entire family here: the winning refresh
+        // already issued the replacement cookie. The caller can retry using
+        // that current cookie.
         return {
           ok: false as const,
-          status: 401,
-          code: "REFRESH_REUSE_DETECTED",
-          message: "Refresh session has been revoked. Please sign in again.",
+          status: 409,
+          code: "REFRESH_STALE",
+          message: "A newer refresh session is already active. Please retry.",
         };
       }
 
