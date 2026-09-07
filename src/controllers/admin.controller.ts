@@ -10,6 +10,7 @@ import bcrypt from "bcrypt";
 import z from "zod";
 import { eventBus } from "../events/index.js";
 import { Events } from "../utils/email/email.types.js";
+import { createNotifications } from "../services/notifications.js";
 
 const bulkAssignSchema = z.object({
   supervisorId: z.number().positive(),
@@ -365,5 +366,35 @@ export const getStudents = async (req: Request, res: Response) => {
       success: false,
       message: "Internal Server Error",
     });
+  }
+};
+
+
+export const broadcastAdminNotification = async (req: Request, res: Response) => {
+  const schema = z.object({
+    title: z.string().trim().min(2).max(255),
+    message: z.string().trim().min(2).max(5000),
+    link: z.string().trim().max(500).optional(),
+    roles: z.array(z.enum(["STUDENT", "SUPERVISOR", "ADMIN"])).min(1).default(["STUDENT", "SUPERVISOR"]),
+  });
+  const parsed = schema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ success: false, message: parsed.error.issues[0]?.message || "Invalid broadcast" });
+  try {
+    const recipients = await db.query.users.findMany({
+      where: inArray(users.role, parsed.data.roles),
+      columns: { id: true },
+    });
+    const created = await createNotifications(recipients.map((u) => ({
+      userId: u.id,
+      type: "ADMIN_BROADCAST",
+      title: parsed.data.title,
+      message: parsed.data.message,
+      link: parsed.data.link || "/dashboard",
+      metadata: { broadcast: true, sentBy: req.user?.id ?? null },
+    })));
+    return res.status(201).json({ success: true, sent: created.length });
+  } catch (error) {
+    console.error("broadcastAdminNotification error", error);
+    return res.status(500).json({ success: false, message: "Unable to send broadcast" });
   }
 };

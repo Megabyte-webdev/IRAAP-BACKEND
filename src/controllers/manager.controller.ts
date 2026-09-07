@@ -21,6 +21,7 @@ import { eventBus } from "../events/index.js";
 import { Events } from "../utils/email/email.types.js";
 import { sendOnboardingEmail } from "../utils/email/onboarding.js";
 import { createNotification } from "../services/notifications.js";
+import { bulkImportOrganizationMembers } from "./organization.controller.js";
 import { sendEmail } from "../services/mail.js";
 
 const createManagerSchema = z.object({
@@ -917,3 +918,32 @@ async function fulfillSuccessfulPayment(reference: string, data: any) {
     }
   });
 }
+
+
+export const bulkImportMembersByManager = async (req: Request, res: Response) => {
+  const ctx = getContext(req);
+  const members = Array.isArray(req.body?.members) ? req.body.members : [];
+  if (!members.length || members.length > 500) {
+    return errorResponse(res, 400, "Provide between 1 and 500 members to import.");
+  }
+  const allowed = members.every((member: any) =>
+    member && typeof member.fullName === "string" && member.fullName.trim().length >= 2 &&
+    typeof member.email === "string" && /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(member.email) &&
+    ["STUDENT", "SUPERVISOR", "RESEARCHER"].includes(member.role) &&
+    (!member.department || typeof member.department === "string")
+  );
+  if (!allowed) return errorResponse(res, 400, "Each row needs fullName, email and a valid member role.");
+
+  if (!(await requireTrialQuota(req, res, "MEMBERS"))) return;
+  if (ctx.subscription?.status === "TRIAL") {
+    const [row] = await db.select({ count: sql<number>`count(*)::int` })
+      .from(organizationMemberships)
+      .where(eq(organizationMemberships.organizationId, ctx.organizationId));
+    const limit = Number(process.env.FREE_TRIAL_MAX_MEMBERS || 25);
+    if ((row?.count ?? 0) + members.length > limit) {
+      return res.status(403).json({ message: `This import would exceed the ${limit}-member trial limit.`, code: "TRIAL_LIMIT_REACHED", limit, resource: "MEMBERS" });
+    }
+  }
+  req.body = { ...req.body, organizationId: ctx.organizationId };
+  return bulkImportOrganizationMembers(req, res);
+};

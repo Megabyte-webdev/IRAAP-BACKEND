@@ -20,6 +20,51 @@ import {
 import { withPagination } from "../utils/pagination.js";
 import { buildMessagePreviewDTO, buildMsgsDTO } from "../utils/helper.js";
 
+async function canChatWith(currentUserId: number, otherUserId: number) {
+  if (currentUserId === otherUserId) return false;
+  const [current, other] = await Promise.all([
+    db.query.users.findFirst({
+      where: eq(users.id, currentUserId),
+      columns: {
+        id: true,
+        organizationId: true,
+        supervisorId: true,
+        role: true,
+      },
+    }),
+    db.query.users.findFirst({
+      where: eq(users.id, otherUserId),
+      columns: {
+        id: true,
+        organizationId: true,
+        supervisorId: true,
+        role: true,
+      },
+    }),
+  ]);
+  if (!current || !other) return false;
+  if (current.role === "ADMIN" || other.role === "ADMIN")
+    return current.role === "ADMIN";
+  const sameOrg = Boolean(
+    current.organizationId &&
+    other.organizationId &&
+    current.organizationId === other.organizationId,
+  );
+  const supervisionNetwork = Boolean(
+    (current.role === "SUPERVISOR" && other.supervisorId === currentUserId) ||
+    (other.role === "SUPERVISOR" && current.supervisorId === otherUserId) ||
+    (current.role === "SUPERVISOR" && other.role === "SUPERVISOR") ||
+    (current.role === "STUDENT" &&
+      other.role === "STUDENT" &&
+      current.supervisorId &&
+      current.supervisorId === other.supervisorId) ||
+    (current.role === "STUDENT" &&
+      other.role === "SUPERVISOR" &&
+      current.supervisorId === otherUserId),
+  );
+  return sameOrg || supervisionNetwork;
+}
+
 export async function getConversations(req: Request, res: Response) {
   const userId = req.user!.id;
 
@@ -44,6 +89,7 @@ export async function getConversations(req: Request, res: Response) {
               fullName: true,
               email: true,
               role: true,
+              profileImageUrl: true,
             },
           },
 
@@ -53,6 +99,7 @@ export async function getConversations(req: Request, res: Response) {
               fullName: true,
               email: true,
               role: true,
+              profileImageUrl: true,
             },
           },
 
@@ -132,43 +179,52 @@ export async function getChatableUsers(req: Request, res: Response) {
     where: eq(users.id, userId),
     columns: { supervisorId: true, role: true, organizationId: true },
   });
-  let whereClause;
-  if (currentUser?.role === "ADMIN") {
-    whereClause = ne(users.id, userId);
-  } else if (currentUser?.organizationId) {
-    // Organization members can discover and message other members.
-    whereClause = and(ne(users.id, userId), eq(users.organizationId, currentUser.organizationId));
-  } else if (role === "SUPERVISOR") {
-    whereClause = and(ne(users.id, userId), or(eq(users.supervisorId, userId), and(eq(users.role, "SUPERVISOR"), ne(users.id, userId))));
-  } else {
-    whereClause = and(ne(users.id, userId), or(eq(users.id, currentUser!.supervisorId!), and(eq(users.supervisorId, currentUser!.supervisorId!), eq(users.role, "STUDENT"))));
-  }
+  if (!currentUser) return res.status(401).json({ error: "User not found" });
 
-  // Existing conversations
+  const conditions: any[] = [ne(users.id, userId)];
+  if (currentUser.role === "ADMIN") {
+    // Admins can reach every non-admin user; admin-to-admin chat is intentionally excluded.
+    conditions.push(ne(users.role, "ADMIN"));
+  } else if (currentUser.organizationId) {
+    conditions.push(eq(users.organizationId, currentUser.organizationId));
+  } else if (role === "SUPERVISOR") {
+    conditions.push(
+      or(
+        eq(users.supervisorId, userId),
+        and(eq(users.role, "SUPERVISOR"), ne(users.id, userId)),
+      ),
+    );
+  } else if (currentUser.supervisorId) {
+    conditions.push(
+      or(
+        eq(users.id, currentUser.supervisorId),
+        and(
+          eq(users.supervisorId, currentUser.supervisorId),
+          eq(users.role, "STUDENT"),
+        ),
+      ),
+    );
+  } else {
+    conditions.push(eq(users.id, -1));
+  }
+  const whereClause = and(...conditions);
+
   const existingConvos = await db.query.conversations.findMany({
     where: or(
       eq(conversations.supervisorId, userId),
       eq(conversations.studentId, userId),
     ),
-    columns: {
-      id: true,
-      supervisorId: true,
-      studentId: true,
-    },
+    columns: { id: true, supervisorId: true, studentId: true },
   });
-
   const convoByPartner = new Map<number, number>();
-
   for (const c of existingConvos) {
     const partnerId = c.supervisorId === userId ? c.studentId : c.supervisorId;
-
     convoByPartner.set(partnerId, c.id);
   }
 
   const result = await withPagination({
     page,
     limit,
-
     dataQuery: (limit, offset) =>
       db.query.users.findMany({
         where: whereClause,
@@ -177,27 +233,19 @@ export async function getChatableUsers(req: Request, res: Response) {
           fullName: true,
           email: true,
           role: true,
+          profileImageUrl: true,
         },
         orderBy: [users.fullName],
         limit,
         offset,
       }),
-
-    countQuery: db
-      .select({
-        count: count(),
-      })
-      .from(users)
-      .where(whereClause),
+    countQuery: db.select({ count: count() }).from(users).where(whereClause),
   });
-
-  const usersWithConversation = result.data.map((u) => ({
-    ...u,
-    conversationId: convoByPartner.get(u.id) ?? null,
-  }));
-
   return res.json({
-    data: usersWithConversation,
+    data: result.data.map((u) => ({
+      ...u,
+      conversationId: convoByPartner.get(u.id) ?? null,
+    })),
     pagination: result.pagination,
   });
 }
@@ -206,18 +254,24 @@ export async function getChatUserById(
   req: Request<{ userId: string }>,
   res: Response,
 ) {
-  const userId = parseInt(req.params.userId);
-  if (isNaN(userId)) {
+  const otherUserId = parseInt(req.params.userId);
+  if (isNaN(otherUserId))
     return res.status(400).json({ error: "Invalid user id" });
-  }
+  const allowed = await canChatWith(req.user!.id, otherUserId);
+  if (!allowed)
+    return res.status(403).json({ error: "You cannot access this user" });
 
   const user = await db.query.users.findFirst({
-    where: eq(users.id, userId),
-    columns: { id: true, fullName: true, email: true, role: true },
+    where: eq(users.id, otherUserId),
+    columns: {
+      id: true,
+      fullName: true,
+      email: true,
+      role: true,
+      profileImageUrl: true,
+    },
   });
-  if (!user) {
-    return res.status(404).json({ error: "User not found" });
-  }
+  if (!user) return res.status(404).json({ error: "User not found" });
   return res.json({ data: user });
 }
 
@@ -238,16 +292,11 @@ export async function getMessages(
   if (otherUserId === currentUserId) {
     return res.status(400).json({ error: "Cannot get messages with yourself" });
   }
-  const [current, other] = await Promise.all([
-    db.query.users.findFirst({ where: eq(users.id, currentUserId), columns: { organizationId: true, supervisorId: true, role: true } }),
-    db.query.users.findFirst({ where: eq(users.id, otherUserId), columns: { organizationId: true, supervisorId: true, role: true } }),
-  ]);
-  const sameOrg = Boolean(current?.organizationId && current.organizationId === other?.organizationId);
-  const supervisionNetwork = Boolean(
-    (current?.role === "SUPERVISOR" && other?.supervisorId === currentUserId) ||
-    (other?.role === "SUPERVISOR" && current?.supervisorId === otherUserId),
-  );
-  if (!sameOrg && !supervisionNetwork) return res.status(403).json({ error: "You cannot access this conversation" });
+  if (!(await canChatWith(currentUserId, otherUserId))) {
+    return res
+      .status(403)
+      .json({ error: "You cannot access this conversation" });
+  }
 
   // Resolve the conversation between these two users
   const convo = await db.query.conversations.findFirst({

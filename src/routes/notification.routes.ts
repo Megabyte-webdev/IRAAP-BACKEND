@@ -5,6 +5,8 @@ import {
   getPushPublicKey,
   readAllNotifications,
   readNotification,
+  subscribeToPush,
+  unsubscribeFromPush,
 } from "../controllers/notification.controller.js";
 
 const router: Router = Router();
@@ -12,6 +14,8 @@ router.use(authenticate);
 
 // Public VAPID key only. The private key never leaves the backend.
 router.get("/push/public-key", getPushPublicKey);
+router.post("/push/subscribe", subscribeToPush);
+router.delete("/push/subscribe", unsubscribeFromPush);
 
 router.get("/", getNotifications);
 router.patch("/:id/read", readNotification);

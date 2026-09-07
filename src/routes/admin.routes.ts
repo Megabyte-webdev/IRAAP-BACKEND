@@ -3,6 +3,7 @@ import {
   bulkAssignSupervisor,
   bulkImportStudents,
   bulkImportSupervisors,
+  broadcastAdminNotification,
   getAdminDashboard,
   getStudents,
   getSupervisors,
@@ -42,5 +43,7 @@ router.post(
   authorize(["ADMIN"]),
   bulkImportSupervisors,
 );
+
+router.post("/notifications/broadcast", authenticate, authorize(["ADMIN"]), broadcastAdminNotification);
 
 export default router;

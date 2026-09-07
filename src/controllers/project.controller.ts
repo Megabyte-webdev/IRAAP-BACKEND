@@ -407,16 +407,19 @@ export const getProjectDetails = async (req: Request, res: Response) => {
   }
 
   try {
-    const project = await db.query.projects.findFirst({
-      where: eq(projects.id, projectId),
-      with: {
-        student: true,
-        supervisor: true,
-        reviews: true,
-        versions: true,
-        currentVersion: true,
-      },
-    });
+    const [project, projectMetadata] = await Promise.all([
+      db.query.projects.findFirst({
+        where: eq(projects.id, projectId),
+        with: {
+          student: true,
+          supervisor: true,
+          reviews: true,
+          versions: true,
+          currentVersion: true,
+        },
+      }),
+      db.query.metadata.findFirst({ where: eq(metadata.projectId, projectId) }),
+    ]);
 
     if (!project) {
       return errorResponse(res, 404, "Project not found");
@@ -433,7 +436,7 @@ export const getProjectDetails = async (req: Request, res: Response) => {
 
     return res.status(200).json({
       message: "Project details fetched successfully",
-      project: [project],
+      project: [{ ...project, metadata: projectMetadata ?? null }],
     });
   } catch (error) {
     console.error("Fetch project details error:", error);

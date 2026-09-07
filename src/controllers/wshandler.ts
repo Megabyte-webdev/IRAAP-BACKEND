@@ -11,7 +11,6 @@ import {
 import { clients } from "../services/ws.js";
 import { db } from "../config/db.js";
 import { buildMsgsDTO, generateMeetingUrl } from "../utils/helper.js";
-import { sendPushNotification } from "../utils/pusher.js";
 import { execute, safeSend, sendWsError } from "../utils/ws-response.js";
 import { createMeeting } from "../services/meetingsdk.js";
 import { eventBus } from "../events/index.js";
@@ -283,9 +282,6 @@ async function handleChatSend(
       payload,
     });
 
-    try {
-      await sendPushNotification({ senderId: payload.senderId, receiverId: msg.recipientId, senderName: ws.fullName, message: content, avatar: null, role: recipientSocket.userRole?.toLowerCase() });
-    } catch (error) { console.warn(error); }
   }
   try {
     await createNotification({

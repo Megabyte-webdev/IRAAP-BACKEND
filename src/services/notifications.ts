@@ -11,15 +11,18 @@ export type NotificationInput = {
   message: string;
   link?: string | null;
   metadata?: Record<string, unknown> | null;
+  /** Set false when an equivalent realtime channel is already active. */
+  sendPush?: boolean;
 };
 
 export async function createNotification(input: NotificationInput) {
+  const { sendPush = true, ...rowInput } = input;
   const [notification] = await db.insert(notifications).values({
-    ...input,
+    ...rowInput,
     metadata: input.metadata ?? null,
   }).returning();
 
-  await pushUser(input.userId, {
+  if (sendPush) await pushUser(input.userId, {
     title: input.title,
     body: input.message,
     link: input.link || "/dashboard",
@@ -31,11 +34,11 @@ export async function createNotification(input: NotificationInput) {
 
 export async function createNotifications(inputs: NotificationInput[]) {
   if (!inputs.length) return [];
-  const created = await db.insert(notifications).values(inputs.map((input) => ({
+  const created = await db.insert(notifications).values(inputs.map(({ sendPush: _sendPush, ...input }) => ({
     ...input,
     metadata: input.metadata ?? null,
   }))).returning();
-  for (const item of inputs) {
+  for (const item of inputs.filter((input) => input.sendPush !== false)) {
     await pushUser(item.userId, {
       title: item.title,
       body: item.message,

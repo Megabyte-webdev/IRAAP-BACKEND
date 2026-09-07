@@ -37,7 +37,7 @@ export const createSupportTicket = async (req: Request, res: Response) => {
       type: "SUPPORT_TICKET_CREATED",
       title: "New support request",
       message: `${ticket.fullName} submitted: ${ticket.subject}`,
-      link: "/support",
+      link: "/admin/support",
       metadata: { ticketId: ticket.id, requesterEmail: ticket.email },
     });
     if (ticket.requesterId) {

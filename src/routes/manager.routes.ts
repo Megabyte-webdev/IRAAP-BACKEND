@@ -4,6 +4,7 @@ import { requireBillingEntitlement, requireOrganizationRole } from "../middlewar
 import {
   createOrganizationManager,
   addOrganizationMemberByManager,
+  bulkImportMembersByManager,
   getManagerDashboard,
   getManagerMembers,
   updateOrganizationMemberRole,
@@ -20,6 +21,7 @@ router.get("/dashboard", getManagerDashboard);
 router.get("/members", getManagerMembers);
 
 router.post("/members", requireBillingEntitlement({ allowTrial: true }), addOrganizationMemberByManager);
+router.post("/members/import", requireBillingEntitlement({ allowTrial: true }), bulkImportMembersByManager);
 router.post("/managers", requireBillingEntitlement({ allowTrial: true }), createOrganizationManager);
 router.patch("/members/:userId/role", requireBillingEntitlement({ allowTrial: true }), updateOrganizationMemberRole);
 router.delete("/members/:userId", requireBillingEntitlement({ allowTrial: true }), removeOrganizationMemberByManager);
