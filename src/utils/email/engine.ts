@@ -11,6 +11,7 @@ import { meetingScheduledTemplate } from "./templates/meetingScheduled.js";
 import { meetingReminderTemplate } from "./templates/meetingReminder.js";
 import { projectSignaledTemplate } from "./templates/projectSignal.js";
 import { projectPublishedTemplate } from "./templates/projectPublished.js";
+import { organizationMemberAddedTemplate } from "./templates/organizationMemberAdded.js";
 
 export const getEmailData = (type: string, payload: any) => {
   const frontendUrl = "https://iraap.com.ng";
@@ -55,6 +56,17 @@ export const getEmailData = (type: string, payload: any) => {
       return {
         subject: `[IRAAP] Feedback & Amendments: ${payload.projectName}`,
         html: amendmentTemplate({ ...payload, dashboardUrl: frontendUrl }),
+      };
+
+    case "ORGANIZATION_MEMBER_ADDED":
+      return {
+        subject: `[IRAAP] You have been added to ${payload.organizationName}`,
+        html: organizationMemberAddedTemplate({
+          fullName: payload.fullName,
+          organizationName: payload.organizationName,
+          role: payload.role,
+          dashboardUrl: frontendUrl,
+        }),
       };
 
     case "USER_REGISTERED":

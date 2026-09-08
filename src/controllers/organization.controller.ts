@@ -19,12 +19,14 @@ import { db } from "../config/db.js";
 import { errorResponse, sanitizeString } from "../utils/helper.js";
 
 import { slugifyOrganization } from "../utils/organization.js";
+import { syncExistingUserOrganizationData } from "../utils/organization.js";
 
 import { eventBus } from "../events/index.js";
 import { Events } from "../utils/email/email.types.js";
 import { sendOnboardingEmail } from "../utils/email/onboarding.js";
 import { createNotification } from "../services/notifications.js";
 import { sendEmail } from "../services/mail.js";
+import { organizationMemberAddedTemplate } from "../utils/email/templates/organizationMemberAdded.js";
 
 const organizationSchema = z
   .object({
@@ -405,12 +407,49 @@ export const addOrganizationMember = async (req: Request, res: Response) => {
       .update(users)
       .set({
         organizationId,
+        department: parsed.data.department?.trim() || user.department || null,
         updatedAt: new Date(),
       })
       .where(eq(users.id, user.id));
 
+    const linkedData = await syncExistingUserOrganizationData(
+      user.id,
+      organizationId,
+      parsed.data.role,
+    );
+
+    const organization = await db.query.organizations.findFirst({
+      where: eq(organizations.id, organizationId),
+      columns: { id: true, name: true },
+    });
+
+    await createNotification({
+      userId: user.id,
+      organizationId,
+      type: "ORGANIZATION_MEMBER_ADDED",
+      title: `Added to ${organization?.name || "organization"}`,
+      message: `You have been added to ${organization?.name || "the organization"} as a ${parsed.data.role.toLowerCase()}.`,
+      link: "/login",
+      metadata: { organizationId, role: parsed.data.role, linkedData },
+    });
+
+    if (organization) {
+      await sendEmail(
+        user.email,
+        `[IRAAP] You have been added to ${organization.name}`,
+        organizationMemberAddedTemplate({
+          fullName: user.fullName,
+          organizationName: organization.name,
+          role: parsed.data.role[0] + parsed.data.role.slice(1).toLowerCase(),
+          dashboardUrl: process.env.FRONTEND_URL || "https://iraap.com.ng",
+        }),
+        "onboarding",
+      );
+    }
+
     return res.status(201).json({
       membership,
+      linkedData,
     });
   } catch (error) {
     console.error("addOrganizationMember error", error);
@@ -507,9 +546,53 @@ export const bulkImportOrganizationMembers = async (
           },
         });
 
+      const organization = await db.query.organizations.findFirst({
+        where: eq(organizations.id, parsed.data.organizationId),
+        columns: { id: true, name: true },
+      });
+
       if (generatedPassword) {
-        await sendOnboardingEmail({ email: user.email, fullName: user.fullName, password: generatedPassword, role: member.role === "SUPERVISOR" ? "Supervisor" : member.role === "RESEARCHER" ? "Researcher" : "Student" });
-        await createNotification({ userId: user.id, organizationId: parsed.data.organizationId, type: "ACCOUNT_CREATED", title: "Your IRAAP account is ready", message: "Your organization account was created. Sign in and change your temporary password.", link: "/login" });
+        await sendOnboardingEmail({
+          email: user.email,
+          fullName: user.fullName,
+          password: generatedPassword,
+          role: member.role === "SUPERVISOR" ? "Supervisor" : member.role === "RESEARCHER" ? "Researcher" : "Student",
+          organizationName: organization?.name,
+        });
+        await createNotification({
+          userId: user.id,
+          organizationId: parsed.data.organizationId,
+          type: "ACCOUNT_CREATED",
+          title: "Your IRAAP account is ready",
+          message: "Your organization account was created. Sign in and change your temporary password.",
+          link: "/login",
+        });
+      } else {
+        const linkedData = await syncExistingUserOrganizationData(
+          user.id,
+          parsed.data.organizationId,
+          member.role,
+        );
+        await createNotification({
+          userId: user.id,
+          organizationId: parsed.data.organizationId,
+          type: "ORGANIZATION_MEMBER_ADDED",
+          title: `Added to ${organization?.name || "organization"}`,
+          message: `You have been added to ${organization?.name || "the organization"} as a ${member.role.toLowerCase()}.`,
+          link: "/login",
+          metadata: { organizationId: parsed.data.organizationId, role: member.role, linkedData },
+        });
+        await sendEmail(
+          user.email,
+          `[IRAAP] You have been added to ${organization?.name || "an organization"}`,
+          organizationMemberAddedTemplate({
+            fullName: user.fullName,
+            organizationName: organization?.name || "your organization",
+            role: member.role[0] + member.role.slice(1).toLowerCase(),
+            dashboardUrl: "https://iraap.com.ng",
+          }),
+          "onboarding",
+        );
       }
     }
 

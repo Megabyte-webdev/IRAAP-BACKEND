@@ -23,6 +23,8 @@ import { sendOnboardingEmail } from "../utils/email/onboarding.js";
 import { createNotification } from "../services/notifications.js";
 import { bulkImportOrganizationMembers } from "./organization.controller.js";
 import { sendEmail } from "../services/mail.js";
+import { syncExistingUserOrganizationData } from "../utils/organization.js";
+import { organizationMemberAddedTemplate } from "../utils/email/templates/organizationMemberAdded.js";
 
 const createManagerSchema = z.object({
   fullName: z.string().trim().min(2).max(255),
@@ -319,6 +321,12 @@ export const addOrganizationMemberByManager = async (
       })
       .where(eq(users.id, user.id));
 
+    const linkedData = await syncExistingUserOrganizationData(
+      user.id,
+      ctx.organizationId,
+      parsed.data.role,
+    );
+
     if (isExistingAccount) {
       const organization = await db.query.organizations.findFirst({
         where: eq(organizations.id, ctx.organizationId),
@@ -332,14 +340,19 @@ export const addOrganizationMemberByManager = async (
         type: "ORGANIZATION_MEMBER_ADDED",
         title: `Added to ${organizationName}`,
         message: `You have been added to ${organizationName} as a ${memberRoleLabel}.`,
-        link: "/chat",
-        metadata: { organizationId: ctx.organizationId, role: parsed.data.role },
+        link: "/login",
+        metadata: { organizationId: ctx.organizationId, role: parsed.data.role, linkedData },
       });
 
       await sendEmail(
         user.email,
         `[IRAAP] You have been added to ${organizationName}`,
-        `<p>Hello ${user.fullName},</p><p>You have been added to <strong>${organizationName}</strong> as a <strong>${memberRoleLabel}</strong>.</p><p>Your existing IRAAP account is still your account. You can sign in normally and access your organization workspace.</p>`,
+        organizationMemberAddedTemplate({
+          fullName: user.fullName,
+          organizationName,
+          role: memberRoleLabel,
+          dashboardUrl: process.env.FRONTEND_URL || "https://iraap.com.ng",
+        }),
         "onboarding",
       );
     }
@@ -555,6 +568,12 @@ export const updateOrganizationMemberRole = async (
       })
       .where(eq(users.id, userId));
 
+    const linkedData = await syncExistingUserOrganizationData(
+      userId,
+      ctx.organizationId,
+      parsed.data.role,
+    );
+
     const organization = await db.query.organizations.findFirst({
       where: eq(organizations.id, ctx.organizationId),
       columns: { name: true },
@@ -565,8 +584,8 @@ export const updateOrganizationMemberRole = async (
       type: "ORGANIZATION_ROLE_UPDATED",
       title: "Your organization role changed",
       message: `Your role in ${organization?.name || "the organization"} is now ${parsed.data.role}.`,
-      link: parsed.data.role === "MANAGER" ? "/manager" : "/chat",
-      metadata: { organizationId: ctx.organizationId, role: parsed.data.role },
+      link: parsed.data.role === "MANAGER" ? "/manager" : "/login",
+      metadata: { organizationId: ctx.organizationId, role: parsed.data.role, linkedData },
     });
 
     return res.json({ membership: updated });
@@ -928,7 +947,7 @@ export const bulkImportMembersByManager = async (req: Request, res: Response) =>
   }
   const allowed = members.every((member: any) =>
     member && typeof member.fullName === "string" && member.fullName.trim().length >= 2 &&
-    typeof member.email === "string" && /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(member.email) &&
+    typeof member.email === "string" && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(member.email) &&
     ["STUDENT", "SUPERVISOR", "RESEARCHER"].includes(member.role) &&
     (!member.department || typeof member.department === "string")
   );

@@ -23,7 +23,7 @@ export async function sendOnboardingEmail({
       role,
       email,
       organizationName,
-      dashboardUrl: "https://iraap.com.ng",
+      dashboardUrl: process.env.FRONTEND_URL || "https://iraap.com.ng",
       mustChangePassword: true,
     } as any),
     "onboarding",

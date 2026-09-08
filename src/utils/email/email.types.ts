@@ -44,4 +44,5 @@ export enum Events {
   MEETING_REMINDER = "meeting.reminder",
   PROJECT_PUBLICATION = "PROJECT.PUBLICATION",
   PROJECT_PUBLISHED = "PROJECT.PUBLISHED",
+  ORGANIZATION_MEMBER_ADDED = "organization.member.added",
 }

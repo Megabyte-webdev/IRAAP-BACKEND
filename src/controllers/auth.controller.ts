@@ -202,12 +202,10 @@ export const forgotPassword = async (req: Request, res: Response) => {
         .status(400)
         .json({ success: false, message: "Enter a valid email address." });
     console.error("Forgot password error:", err);
-    return res
-      .status(500)
-      .json({
-        success: false,
-        message: "Unable to start password recovery right now.",
-      });
+    return res.status(500).json({
+      success: false,
+      message: "Unable to start password recovery right now.",
+    });
   }
 };
 
@@ -222,19 +220,15 @@ export const resetPassword = async (req: Request, res: Response) => {
       ),
     });
     if (!challenge || challenge.expiresAt.getTime() <= Date.now())
-      return res
-        .status(400)
-        .json({
-          success: false,
-          message: "This verification code is invalid or expired.",
-        });
+      return res.status(400).json({
+        success: false,
+        message: "This verification code is invalid or expired.",
+      });
     if (challenge.attempts >= OTP_MAX_ATTEMPTS)
-      return res
-        .status(429)
-        .json({
-          success: false,
-          message: "Too many incorrect attempts. Request a new code.",
-        });
+      return res.status(429).json({
+        success: false,
+        message: "Too many incorrect attempts. Request a new code.",
+      });
     const valid = safeEqual(hashOtp(challenge.id, code), challenge.codeHash);
     if (!valid) {
       await db
@@ -271,20 +265,16 @@ export const resetPassword = async (req: Request, res: Response) => {
     return res.json({ success: true, message: "Password reset successfully." });
   } catch (err: any) {
     if (err instanceof z.ZodError)
-      return res
-        .status(400)
-        .json({
-          success: false,
-          message: "Invalid password reset request.",
-          errors: err.issues,
-        });
-    console.error("Reset password error:", err);
-    return res
-      .status(500)
-      .json({
+      return res.status(400).json({
         success: false,
-        message: "Unable to reset your password right now.",
+        message: "Invalid password reset request.",
+        errors: err.issues,
       });
+    console.error("Reset password error:", err);
+    return res.status(500).json({
+      success: false,
+      message: "Unable to reset your password right now.",
+    });
   }
 };
 
@@ -322,15 +312,13 @@ export const changePassword = async (req: Request, res: Response) => {
           updatedAt: new Date(),
         })
         .where(eq(users.id, userId));
-      await tx
-        .insert(notifications)
-        .values({
-          userId,
-          type: "SECURITY_PASSWORD_CHANGED",
-          title: "Password changed",
-          message: "Your IRAAP password was changed successfully.",
-          link: "/profile",
-        });
+      await tx.insert(notifications).values({
+        userId,
+        type: "SECURITY_PASSWORD_CHANGED",
+        title: "Password changed",
+        message: "Your IRAAP password was changed successfully.",
+        link: "/profile",
+      });
     });
     return res.json({
       success: true,
@@ -338,19 +326,15 @@ export const changePassword = async (req: Request, res: Response) => {
     });
   } catch (err: any) {
     if (err instanceof z.ZodError)
-      return res
-        .status(400)
-        .json({
-          success: false,
-          message: err.issues[0]?.message || "Invalid password.",
-        });
-    console.error("Change password error:", err);
-    return res
-      .status(500)
-      .json({
+      return res.status(400).json({
         success: false,
-        message: "Unable to change your password right now.",
+        message: err.issues[0]?.message || "Invalid password.",
       });
+    console.error("Change password error:", err);
+    return res.status(500).json({
+      success: false,
+      message: "Unable to change your password right now.",
+    });
   }
 };
 

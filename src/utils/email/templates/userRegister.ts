@@ -100,7 +100,7 @@ export const registeredTemplate = (data: {
     <table cellpadding="0" cellspacing="0" border="0" style="margin-bottom: 32px;">
       <tr>
         <td align="center" style="background-color: #3aa6ee;">
-          <a href="${frontendUrl}/${data?.role.toLowerCase()}" target="_blank" rel="noopener noreferrer"
+          <a href="${frontendUrl}/login" target="_blank" rel="noopener noreferrer"
             style="
               background-color: #3aa6ee;
               color: #ffffff;
@@ -111,7 +111,7 @@ export const registeredTemplate = (data: {
               display: inline-block;
               border: 1px solid #3aa6ee;
             ">
-            Go to Dashboard &rarr;
+            Sign in to IRAAP &rarr;
           </a>
         </td>
       </tr>
