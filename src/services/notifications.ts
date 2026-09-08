@@ -11,12 +11,14 @@ export type NotificationInput = {
   message: string;
   link?: string | null;
   metadata?: Record<string, unknown> | null;
+  /** Optional profile image to use as the push notification icon. */
+  iconUrl?: string | null;
   /** Set false when an equivalent realtime channel is already active. */
   sendPush?: boolean;
 };
 
 export async function createNotification(input: NotificationInput) {
-  const { sendPush = true, ...rowInput } = input;
+  const { sendPush = true, iconUrl: _iconUrl, ...rowInput } = input;
   const [notification] = await db.insert(notifications).values({
     ...rowInput,
     metadata: input.metadata ?? null,
@@ -27,6 +29,7 @@ export async function createNotification(input: NotificationInput) {
     body: input.message,
     link: input.link || "/dashboard",
     tag: `${input.type}-${notification.id}`,
+    icon: await resolveNotificationIcon(input),
   });
 
   return notification;
@@ -34,7 +37,7 @@ export async function createNotification(input: NotificationInput) {
 
 export async function createNotifications(inputs: NotificationInput[]) {
   if (!inputs.length) return [];
-  const created = await db.insert(notifications).values(inputs.map(({ sendPush: _sendPush, ...input }) => ({
+  const created = await db.insert(notifications).values(inputs.map(({ sendPush: _sendPush, iconUrl: _iconUrl, ...input }) => ({
     ...input,
     metadata: input.metadata ?? null,
   }))).returning();
@@ -44,12 +47,13 @@ export async function createNotifications(inputs: NotificationInput[]) {
       body: item.message,
       link: item.link || "/dashboard",
       tag: `${item.type}-${Date.now()}-${item.userId}`,
+      icon: await resolveNotificationIcon(item),
     });
   }
   return created;
 }
 
-async function pushUser(userId: number, payload: { title: string; body: string; link: string; tag: string }) {
+async function pushUser(userId: number, payload: { title: string; body: string; link: string; tag: string; icon?: string | null }) {
   if (!pushConfigured) return;
   const subscriptions = await db.query.pushSubscriptions.findMany({
     where: eq(pushSubscriptions.userId, userId),
@@ -59,7 +63,7 @@ async function pushUser(userId: number, payload: { title: string; body: string; 
       await webpush.sendNotification({
         endpoint: subscription.endpoint,
         keys: { p256dh: subscription.p256dh, auth: subscription.auth },
-      }, JSON.stringify({ ...payload, icon: "/irap-logo.png", url: payload.link }));
+      }, JSON.stringify({ ...payload, icon: payload.icon || "/iraap-mark-192x192.png", url: payload.link }));
     } catch (error: any) {
       const statusCode = error?.statusCode;
       if (statusCode === 404 || statusCode === 410) {
@@ -69,6 +73,21 @@ async function pushUser(userId: number, payload: { title: string; body: string; 
       }
     }
   }
+}
+
+async function resolveNotificationIcon(input: NotificationInput): Promise<string | null> {
+  if (input.iconUrl) return input.iconUrl;
+
+  const metadata = input.metadata ?? {};
+  const senderIdRaw = metadata.senderId ?? metadata.sentBy;
+  const senderId = Number(senderIdRaw);
+  if (!Number.isFinite(senderId) || senderId <= 0) return null;
+
+  const sender = await db.query.users.findFirst({
+    where: eq(users.id, senderId),
+    columns: { profileImageUrl: true },
+  });
+  return sender?.profileImageUrl ?? null;
 }
 
 export async function notifyAdmins(input: Omit<NotificationInput, "userId" | "organizationId"> & { organizationId?: number | null }) {

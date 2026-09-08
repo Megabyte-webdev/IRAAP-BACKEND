@@ -430,7 +430,7 @@ export const addOrganizationMember = async (req: Request, res: Response) => {
       title: `Added to ${organization?.name || "organization"}`,
       message: `You have been added to ${organization?.name || "the organization"} as a ${parsed.data.role.toLowerCase()}.`,
       link: "/login",
-      metadata: { organizationId, role: parsed.data.role, linkedData },
+      metadata: { organizationId, role: parsed.data.role, linkedData, senderId: Number((req as any).user?.id) || null },
     });
 
     if (organization) {
@@ -580,7 +580,7 @@ export const bulkImportOrganizationMembers = async (
           title: `Added to ${organization?.name || "organization"}`,
           message: `You have been added to ${organization?.name || "the organization"} as a ${member.role.toLowerCase()}.`,
           link: "/login",
-          metadata: { organizationId: parsed.data.organizationId, role: member.role, linkedData },
+          metadata: { organizationId: parsed.data.organizationId, role: member.role, linkedData, senderId: Number((req as any).user?.id) || null },
         });
         await sendEmail(
           user.email,
