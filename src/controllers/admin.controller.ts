@@ -84,20 +84,50 @@ export const bulkAssignSupervisor = async (req: Request, res: Response) => {
     if (!supervisor || supervisor.role !== "SUPERVISOR") {
       return res
         .status(400)
-        .json({ success: false, message: "A valid supervisor account is required" });
+        .json({
+          success: false,
+          message: "A valid supervisor account is required",
+        });
     }
 
     const targets = await db
-      .select({ id: users.id, fullName: users.fullName, email: users.email, role: users.role, organizationId: users.organizationId })
+      .select({
+        id: users.id,
+        fullName: users.fullName,
+        email: users.email,
+        role: users.role,
+        organizationId: users.organizationId,
+      })
       .from(users)
       .where(inArray(users.id, studentIds));
 
-    if (targets.length !== studentIds.length || targets.some((student) => student.role !== "STUDENT")) {
-      return res.status(400).json({ success: false, message: "All selected accounts must be valid students" });
+    if (
+      targets.length !== studentIds.length ||
+      targets.some((student) => student.role !== "STUDENT")
+    ) {
+      return res
+        .status(400)
+        .json({
+          success: false,
+          message: "All selected accounts must be valid students",
+        });
     }
 
-    if (supervisor.organizationId && targets.some((student) => student.organizationId && student.organizationId !== supervisor.organizationId)) {
-      return res.status(400).json({ success: false, message: "Supervisor and students must belong to the same organization" });
+    if (
+      supervisor.organizationId &&
+      targets.some(
+        (student) =>
+          student.organizationId &&
+          student.organizationId !== supervisor.organizationId,
+      )
+    ) {
+      return res
+        .status(400)
+        .json({
+          success: false,
+          message:
+            "Supervisor and students must belong to the same organization",
+        });
     }
 
     await db.transaction(async (tx) => {
@@ -176,8 +206,16 @@ export const bulkImportStudents = async (req: Request, res: Response) => {
       .onConflictDoNothing({ target: users.email });
 
     for (const student of studentsToInsert) {
-      const rawPassword = student.fullName?.toLowerCase()?.trim()?.split(" ")[0];
-      await sendOnboardingEmail({ email: student.email, fullName: student.fullName, password: rawPassword, role: "Student" });
+      const rawPassword = student.fullName
+        ?.toLowerCase()
+        ?.trim()
+        ?.split(" ")[0];
+      await sendOnboardingEmail({
+        email: student.email,
+        fullName: student.fullName,
+        password: rawPassword,
+        role: "Student",
+      });
     }
 
     res.status(201).json({
@@ -229,8 +267,16 @@ export const bulkImportSupervisors = async (req: Request, res: Response) => {
       .onConflictDoNothing({ target: users.email });
 
     for (const supervisor of supervisorsToInsert) {
-      const rawPassword = supervisor.fullName?.toLowerCase()?.trim()?.split(" ")[0];
-      await sendOnboardingEmail({ email: supervisor.email, fullName: supervisor.fullName, password: `${rawPassword}@irap`, role: "Supervisor" });
+      const rawPassword = supervisor.fullName
+        ?.toLowerCase()
+        ?.trim()
+        ?.split(" ")[0];
+      await sendOnboardingEmail({
+        email: supervisor.email,
+        fullName: supervisor.fullName,
+        password: `${rawPassword}@irap`,
+        role: "Supervisor",
+      });
     }
 
     res.status(201).json({
@@ -369,32 +415,47 @@ export const getStudents = async (req: Request, res: Response) => {
   }
 };
 
-
-export const broadcastAdminNotification = async (req: Request, res: Response) => {
+export const broadcastAdminNotification = async (
+  req: Request,
+  res: Response,
+) => {
   const schema = z.object({
     title: z.string().trim().min(2).max(255),
     message: z.string().trim().min(2).max(5000),
     link: z.string().trim().max(500).optional(),
-    roles: z.array(z.enum(["STUDENT", "SUPERVISOR", "ADMIN"])).min(1).default(["STUDENT", "SUPERVISOR"]),
+    roles: z
+      .array(z.enum(["STUDENT", "SUPERVISOR", "ADMIN"]))
+      .min(1)
+      .default(["STUDENT", "SUPERVISOR"]),
   });
   const parsed = schema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ success: false, message: parsed.error.issues[0]?.message || "Invalid broadcast" });
+  if (!parsed.success)
+    return res
+      .status(400)
+      .json({
+        success: false,
+        message: parsed.error.issues[0]?.message || "Invalid broadcast",
+      });
   try {
     const recipients = await db.query.users.findMany({
       where: inArray(users.role, parsed.data.roles),
       columns: { id: true },
     });
-    const created = await createNotifications(recipients.map((u) => ({
-      userId: u.id,
-      type: "ADMIN_BROADCAST",
-      title: parsed.data.title,
-      message: parsed.data.message,
-      link: parsed.data.link || "/dashboard",
-      metadata: { broadcast: true, sentBy: req.user?.id ?? null },
-    })));
+    const created = await createNotifications(
+      recipients.map((u) => ({
+        userId: u.id,
+        type: "ADMIN_BROADCAST",
+        title: parsed.data.title,
+        message: parsed.data.message,
+        link: parsed.data.link || "/",
+        metadata: { broadcast: true, sentBy: req.user?.id ?? null },
+      })),
+    );
     return res.status(201).json({ success: true, sent: created.length });
   } catch (error) {
     console.error("broadcastAdminNotification error", error);
-    return res.status(500).json({ success: false, message: "Unable to send broadcast" });
+    return res
+      .status(500)
+      .json({ success: false, message: "Unable to send broadcast" });
   }
 };
