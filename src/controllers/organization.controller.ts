@@ -226,6 +226,54 @@ export const createOrganization = async (req: Request, res: Response) => {
   }
 };
 
+
+export const getMyOrganization = async (req: Request, res: Response) => {
+  try {
+    const userId = Number((req as any).user?.id);
+    if (!Number.isInteger(userId)) return errorResponse(res, 401, "Unauthorized");
+
+    const membership = await db.query.organizationMemberships.findFirst({
+      where: eq(organizationMemberships.userId, userId),
+      orderBy: [desc(organizationMemberships.createdAt)],
+      with: { organization: true },
+    });
+
+    const org = Array.isArray(membership?.organization)
+      ? membership.organization[0]
+      : membership?.organization;
+
+    if (!org) {
+      return errorResponse(res, 404, "You are not currently a member of an organization.");
+    }
+
+    const [memberCount, projectCount] = await Promise.all([
+      db.select({ count: sql<number>`count(*)::int` }).from(organizationMemberships).where(eq(organizationMemberships.organizationId, org.id)),
+      db.select({ count: sql<number>`count(*)::int` }).from(projects).where(eq(projects.organizationId, org.id)),
+    ]);
+
+    return res.json({
+      success: true,
+      organization: {
+        id: org.id,
+        name: org.name,
+        slug: org.slug,
+        code: org.code,
+        description: org.description,
+        createdAt: org.createdAt,
+        memberCount: memberCount[0]?.count ?? 0,
+        projectCount: projectCount[0]?.count ?? 0,
+        myRole: membership.role,
+        myDepartment: membership.department,
+        externalRef: membership.externalRef,
+        joinedAt: membership.createdAt,
+      },
+    });
+  } catch (error) {
+    console.error("getMyOrganization error", error);
+    return errorResponse(res, 500, "Unable to load organization details");
+  }
+};
+
 export const getOrganizations = async (_req: Request, res: Response) => {
   try {
     const data = await db.query.organizations.findMany({

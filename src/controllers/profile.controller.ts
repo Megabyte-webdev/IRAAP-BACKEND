@@ -2,7 +2,7 @@ import type { Request, Response } from "express";
 import { z } from "zod";
 import { db } from "../config/db.js";
 import { users } from "../database/schema.js";
-import { desc, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import cloudinary from "../config/cloudinary.js";
 
 const profileSchema = z.object({
@@ -16,46 +16,7 @@ const profileSchema = z.object({
   bio: z.string().trim().max(1000).optional().or(z.literal("")),
 });
 
-
-async function loadUserProfile(userId: number) {
-  return db.query.users.findFirst({
-    where: eq(users.id, userId),
-    with: {
-      organization: {
-        columns: { id: true, name: true, slug: true, code: true },
-      },
-      memberships: {
-        orderBy: (membership, { desc }) => [desc(membership.createdAt)],
-        with: {
-          organization: {
-            columns: { id: true, name: true, slug: true, code: true },
-          },
-        },
-      },
-    },
-  });
-}
-
 function publicProfile(user: any) {
-  const memberships = (user.memberships || []).map((membership: any) => ({
-    id: membership.id,
-    organizationId: membership.organizationId,
-    organizationName: membership.organization?.name || "Organization",
-    organizationSlug: membership.organization?.slug || null,
-    organizationCode: membership.organization?.code || null,
-    role: membership.role,
-    department: membership.department,
-    joinedAt: membership.createdAt,
-  }));
-
-  const activeMembership = memberships[0] || null;
-  const activeOrganization = user.organization || (activeMembership ? {
-    id: activeMembership.organizationId,
-    name: activeMembership.organizationName,
-    slug: activeMembership.organizationSlug,
-    code: activeMembership.organizationCode,
-  } : null);
-
   const completed = Boolean(
     user.profileCompletedAt ||
       (user.department && user.programme && user.level),
@@ -78,9 +39,6 @@ function publicProfile(user: any) {
     profileCompletedAt: user.profileCompletedAt,
     profileComplete: completed,
     createdAt: user.createdAt,
-    organization: activeOrganization,
-    organizationRole: activeMembership?.role || null,
-    organizations: memberships,
   };
 }
 
@@ -88,7 +46,7 @@ export async function getMyProfile(req: Request, res: Response) {
   const userId = Number((req as any).user?.id);
   if (!Number.isInteger(userId)) return res.status(401).json({ success: false, message: "Unauthorized" });
 
-  const user = await loadUserProfile(userId);
+  const user = await db.query.users.findFirst({ where: eq(users.id, userId) });
   if (!user) return res.status(404).json({ success: false, message: "User not found." });
 
   return res.json({ success: true, profile: publicProfile(user) });
@@ -120,8 +78,7 @@ export async function updateMyProfile(req: Request, res: Response) {
       .returning();
 
     if (!updated) return res.status(404).json({ success: false, message: "User not found." });
-    const refreshed = await loadUserProfile(userId);
-    return res.json({ success: true, profile: publicProfile(refreshed || updated), message: "Profile updated successfully." });
+    return res.json({ success: true, profile: publicProfile(updated), message: "Profile updated successfully." });
   } catch (error) {
     if (error instanceof z.ZodError) {
       return res.status(400).json({ success: false, message: "Please check your profile details.", errors: error.issues });
@@ -173,8 +130,7 @@ export async function uploadMyProfileImage(req: Request, res: Response) {
       );
     }
 
-    const refreshed = await loadUserProfile(userId);
-    return res.json({ success: true, profile: publicProfile(refreshed || updated), message: "Profile photo updated successfully." });
+    return res.json({ success: true, profile: publicProfile(updated), message: "Profile photo updated successfully." });
   } catch (error) {
     if (uploaded?.public_id) {
       await cloudinary.uploader.destroy(uploaded.public_id, { resource_type: "image" }).catch(() => undefined);
