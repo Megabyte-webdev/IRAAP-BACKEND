@@ -52,10 +52,53 @@ const getOrganizationAccess = async (userId: number) => {
     where: eq(organizationMemberships.userId, userId),
     orderBy: [desc(organizationMemberships.createdAt)],
     columns: { organizationId: true, role: true },
+    with: {
+      organization: {
+        columns: { id: true, name: true, slug: true, code: true },
+      },
+    },
   });
+
+  const memberships = await db.query.organizationMemberships.findMany({
+    where: eq(organizationMemberships.userId, userId),
+    orderBy: [desc(organizationMemberships.createdAt)],
+    columns: {
+      organizationId: true,
+      role: true,
+      department: true,
+      createdAt: true,
+    },
+    with: {
+      organization: {
+        columns: { id: true, name: true, slug: true, code: true },
+      },
+    },
+  });
+
   return {
     organizationId: membership?.organizationId ?? null,
     organizationRole: membership?.role ?? null,
+    organizationName:
+      (Array.isArray(membership?.organization)
+        ? membership.organization[0]
+        : membership?.organization
+      )?.name ?? null,
+    organization: membership?.organization ?? null,
+    organizations: memberships.map((item) => {
+      const organization = Array.isArray(item.organization)
+        ? item.organization[0]
+        : item.organization;
+
+      return {
+        id: organization.id,
+        name: organization.name,
+        slug: organization.slug,
+        code: organization.code,
+        role: item.role,
+        department: item.department,
+        joinedAt: item.createdAt,
+      };
+    }),
   };
 };
 
@@ -527,6 +570,9 @@ export const verifyOtp = async (req: Request, res: Response) => {
         role: user.role,
         organizationId: organizationAccess.organizationId,
         organizationRole: organizationAccess.organizationRole,
+        organizationName: organizationAccess.organizationName,
+        organization: organizationAccess.organization,
+        organizations: organizationAccess.organizations,
         supervisorId: user.supervisorId,
         profileImageUrl: user.profileImageUrl ?? null,
         profileComplete: Boolean(
@@ -847,6 +893,9 @@ export const refreshToken = async (req: Request, res: Response) => {
         role: result.user.role,
         organizationId: organizationAccess.organizationId,
         organizationRole: organizationAccess.organizationRole,
+        organizationName: organizationAccess.organizationName,
+        organization: organizationAccess.organization,
+        organizations: organizationAccess.organizations,
       },
     });
   } catch (error) {

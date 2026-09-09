@@ -272,6 +272,14 @@ async function handleChatSend(
     payload: {
       ...payload,
       clientId: msg.clientId,
+      receiverId: recipient.id,
+      receiver: {
+        id: recipient.id,
+        fullName: recipient.fullName,
+        email: recipient.email,
+        role: recipient.role,
+        profileImageUrl: recipient.profileImageUrl ?? null,
+      },
     },
   });
   const recipientSocket = clients.get(msg.recipientId);
