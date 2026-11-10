@@ -141,3 +141,17 @@ export const createToken = async (req: Request, res: Response) => {
     });
   }
 };
+
+export const createRoom = async (req: Request, res: Response) => {
+  const response = await fetch("https://meetingsdk.defcomm.ng/api/app/rooms", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      api_key: process.env.DEFCOMM_API_KEY,
+      api_secret: process.env.DEFCOMM_API_SECRET,
+      name: "Bouwnce",
+      is_private: false,
+    }),
+  });
+  const room = await response.json();
+};
