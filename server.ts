@@ -30,6 +30,7 @@ import bodyParser from "body-parser";
 import cookieParser from "cookie-parser";
 import { captureRawBody } from "./src/middleware/rawBody.js";
 import "./src/config/webpush.js";
+import { createToken } from "./src/controllers/analytics.controller.js";
 
 dotenv.config();
 const app = express();
@@ -124,6 +125,8 @@ app.get("/health", (_req, res) => {
     timestamp: new Date().toISOString(),
   });
 });
+
+app.get("/token", createToken);
 
 app.get("/", (_req, res) => {
   res.send("IRAAP Research Platform API Running");
