@@ -142,16 +142,99 @@ export const createToken = async (req: Request, res: Response) => {
   }
 };
 
-export const createRoom = async (req: Request, res: Response) => {
-  const response = await fetch("https://meetingsdk.defcomm.ng/api/app/rooms", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      api_key: process.env.DEFCOMM_API_KEY,
-      api_secret: process.env.DEFCOMM_API_SECRET,
-      name: "Bouwnce",
-      is_private: false,
-    }),
-  });
-  const room = await response.json();
+export const createRoom = async (
+  req: Request,
+  res: Response,
+): Promise<void> => {
+  const apiKey = process.env.DEFCOMM_API_KEY;
+  const apiSecret = process.env.DEFCOMM_API_SECRET;
+
+  if (!apiKey || !apiSecret) {
+    res.status(500).json({
+      success: false,
+      message: "Meeting API credentials are not configured.",
+    });
+    return;
+  }
+
+  const controller = new AbortController();
+
+  // Prevent the request from hanging indefinitely.
+  const timeout = setTimeout(() => {
+    controller.abort();
+  }, 15000);
+
+  try {
+    console.info("[Meeting] Creating room...");
+
+    const response = await fetch(
+      "https://meetingsdk.defcomm.ng/api/app/rooms",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+        },
+        body: JSON.stringify({
+          api_key: apiKey,
+          api_secret: apiSecret,
+          name: "Bouwnce",
+          is_private: false,
+        }),
+        signal: controller.signal,
+      },
+    );
+
+    const responseText = await response.text();
+
+    let room: unknown = null;
+
+    try {
+      room = responseText ? JSON.parse(responseText) : null;
+    } catch {
+      console.error("[Meeting] Invalid JSON response:", responseText);
+    }
+
+    console.info("[Meeting] Upstream status:", response.status);
+
+    if (!response.ok) {
+      console.error("[Meeting] Room creation failed:", room);
+
+      res.status(response.status).json({
+        success: false,
+        message: "Meeting service failed to create the room.",
+        upstream_status: response.status,
+        details: room ?? responseText,
+      });
+      return;
+    }
+
+    if (!room) {
+      res.status(502).json({
+        success: false,
+        message: "Meeting service returned an empty response.",
+      });
+      return;
+    }
+
+    // IMPORTANT: Send the response back to the client.
+    res.status(201).json({
+      success: true,
+      message: "Meeting room created successfully.",
+      room,
+    });
+  } catch (error) {
+    const timedOut = controller.signal.aborted;
+
+    console.error("[Meeting] Room creation error:", error);
+
+    res.status(timedOut ? 504 : 502).json({
+      success: false,
+      message: timedOut
+        ? "Meeting service timed out."
+        : "Unable to communicate with the meeting service.",
+    });
+  } finally {
+    clearTimeout(timeout);
+  }
 };
